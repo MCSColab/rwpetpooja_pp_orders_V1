@@ -68,6 +68,10 @@ class DataCleaner:
 
         try:
             # 1. Read the data
+            self.logger.info(f"Reading input file: {latest_file.name}...")
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] Step 1: Reading input file..."
+            )
             if latest_file.suffix.lower() == ".csv":
                 df = pd.read_csv(latest_file)
             else:
@@ -77,22 +81,24 @@ class DataCleaner:
             cleaned_df = self._transform_data(df)
 
             # 3. Save the cleaned file
-            # Format: dd mmm Sales.xlsx (e.g., 24 Jan Sales.xlsx)
-            # We use the current date or should we parse from the report?
-            # User example dd mmm suggests today's process date.
             output_filename = datetime.now().strftime("%d %b Sales.xlsx")
             output_path = self.download_dir / output_filename
 
-            # Save as Excel
+            self.logger.info(f"Saving cleaned report to: {output_path.name}...")
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] Step 4: Saving output file as {output_filename}..."
+            )
             cleaned_df.to_excel(output_path, index=False)
-            self.logger.info(f"Saved cleaned report to: {output_path}")
 
             # 4. Move original to Processed folder
             dest = self.processed_dir / latest_file.name
             if dest.exists():
                 dest.unlink()
             shutil.move(str(latest_file), str(dest))
-            self.logger.info(f"Moved original file to {self.processed_dir}")
+            self.logger.info("Moved original file to Processed folder.")
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] Step 5: Archiving original file."
+            )
 
             return output_path
 
@@ -115,6 +121,9 @@ class DataCleaner:
 
         # --- A. Column Normalization ---
         if "order_type" in df.columns:
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] Step 2a: Normalizing order types..."
+            )
             # Update "Delivery(Parcel)" or "Delivery (Parcel)" to exactly "Delivery"
             mask = df["order_type"].str.contains(
                 r"Delivery\s?\(Parcel\)", case=False, na=False
@@ -123,11 +132,13 @@ class DataCleaner:
 
         # --- B. Record Filtering ---
         if "status" in df.columns:
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] Step 2b: Filtering cancelled/complimentary and staff records..."
+            )
             # Delete rows where status is "Cancelled" or "Complimentary"
             df = df[~df["status"].str.lower().isin(["cancelled", "complimentary"])]
 
             # Remove Staff: Delete all rows where any key column contains "Staff"
-            # Since the user didn't specify which column, we check status, order_type, sub_order_type
             cols_to_check = ["status", "order_type", "sub_order_type"]
             for col in cols_to_check:
                 if col in df.columns:
@@ -135,6 +146,9 @@ class DataCleaner:
 
         # --- C. Platform Standardization ---
         if "sub_order_type" in df.columns:
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] Step 2c: Standardizing platforms (Swiggy, Zomato, App)..."
+            )
             # Standardize Swiggy
             swiggy_mask = df["sub_order_type"].str.contains(
                 "Swiggy", case=False, na=False
@@ -164,10 +178,7 @@ class DataCleaner:
             )
             df.loc[app_delivery_mask, "sub_order_type"] = "Delivery"
 
-            # For other heads like "B2B" in Sub Order type, ensure they are updated to match
-            # the corresponding order_type.
-            # Interpretation: If sub_order_type doesn't match a standard platform (Swiggy, Zomato, Delivery/App),
-            # sync it with order_type.
+            # Map non-standard platforms to order_type
             known_platforms = [
                 "Swiggy",
                 "Zomato",
@@ -176,11 +187,13 @@ class DataCleaner:
                 "Dine In",
                 "Takeaway",
             ]
-            # Any record where sub_order_type is not in known_platforms, set it to order_type
             b2b_mask = ~df["sub_order_type"].isin(known_platforms)
             df.loc[b2b_mask, "sub_order_type"] = df.loc[b2b_mask, "order_type"]
 
         # --- 3. Data Pruning ---
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] Step 3: Pruning non-essential columns..."
+        )
         cols_to_delete = [
             "gst_no",
             "payment_description",

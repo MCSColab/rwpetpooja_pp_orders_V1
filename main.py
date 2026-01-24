@@ -1,44 +1,63 @@
 import asyncio
 import sys
+import os
 import warnings
 import traceback
 from execution.petpooja_automation import PetpoojaAutomation
 from execution.logger_helper import LoggerHelper
 from execution.gdrive_uploader import GDriveUploader
 from execution.data_cleaner import DataCleaner
+from execution.notifier_helper import NotifierHelper
 
 
 async def main():
-    logger = LoggerHelper()
-    logger.log_execution("INFO", "Starting Petpooja Order Summary Report Automation")
+    logger_helper = LoggerHelper()
+    logger = logger_helper.logger
+    notifier = NotifierHelper()
+
+    logger.info("Starting Petpooja Order Summary Report Automation")
+    success = False
 
     try:
         automation = PetpoojaAutomation()
         await automation.run()
-        logger.log_execution("INFO", "Automation process finished.")
+        logger.info("Automation process finished.")
 
-        logger.log_execution("INFO", "Starting Data Cleaning process")
+        logger.info("Starting Data Cleaning process")
         cleaner = DataCleaner()
         cleaned_file = cleaner.process_latest_report()
         if cleaned_file:
-            logger.log_execution(
-                "INFO", f"Data cleaning finished. Cleaned file: {cleaned_file.name}"
-            )
+            logger.info(f"Data cleaning finished. Cleaned file: {cleaned_file.name}")
         else:
-            logger.log_execution(
-                "WARNING",
-                "Data cleaning skipped (no new file found or error occurred).",
+            logger.warning(
+                "Data cleaning skipped (no new file found or error occurred)."
             )
 
-        logger.log_execution("INFO", "Starting Google Drive upload process")
+        logger.info("Starting Google Drive upload process")
         uploader = GDriveUploader()
         uploader.process_files()
-        logger.log_execution("INFO", "Google Drive upload process finished.")
+        logger.info("Google Drive upload process finished.")
+        success = True
+
     except Exception as e:
         error_msg = str(e) or type(e).__name__
-        logger.log_execution("ERROR", f"Automation failed: {error_msg}")
-        logger.log_execution("ERROR", f"Traceback: {traceback.format_exc()}")
-        sys.exit(1)
+        logger.error(f"Automation failed: {error_msg}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        success = False
+    finally:
+        # Collect log data for the email
+        log_content = ""
+        try:
+            if os.path.exists(logger_helper.log_file):
+                with open(logger_helper.log_file, "r", encoding="utf-8") as f:
+                    log_content = f.read()
+        except Exception as log_err:
+            logger.error(f"Could not read log file for email: {log_err}")
+
+        notifier.send_status_email(success, log_content)
+
+        if not success:
+            sys.exit(1)
 
 
 def suppress_cleanup_exceptions(args):

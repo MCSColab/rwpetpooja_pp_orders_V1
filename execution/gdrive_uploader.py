@@ -210,6 +210,9 @@ class GDriveUploader:
     def process_files(self) -> None:
         """Scan download directory and upload files to Google Drive."""
         self.logger.info("Starting Google Drive upload process...")
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] Step 1: Starting Google Drive upload process..."
+        )
 
         if not self.drive_service.authenticate():
             self.logger.error("Failed to authenticate with Google Drive.")
@@ -222,24 +225,37 @@ class GDriveUploader:
             self.logger.error("GDRIVE_FOLDER_ID not found in config.")
             return
 
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] Step 2: Identified target folder ID: {gdrive_folder_id}"
+        )
+        self.logger.info(f"Target Folder ID: {gdrive_folder_id}")
+
         files = [f for f in self.download_dir.iterdir() if f.is_file()]
         if not files:
             self.logger.info("No files found to upload.")
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] No files found in {self.download_dir} for upload."
+            )
             return
 
         for file_path in files:
             self.logger.info(f"Uploading {file_path.name}...")
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] Step 3: Uploading {file_path.name} to Google Drive..."
+            )
             success, result = self.drive_service.upload_file(
                 file_path, gdrive_folder_id
             )
 
             if success:
-                self.logger.info(
-                    f"Successfully uploaded {file_path.name}. File ID: {result}"
-                )
+                msg = f"Successfully uploaded {file_path.name}. File ID: {result}"
+                self.logger.info(msg)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
                 self._move_to_processed(file_path)
             else:
-                self.logger.error(f"Failed to upload {file_path.name}: {result}")
+                msg = f"Failed to upload {file_path.name}: {result}"
+                self.logger.error(msg)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
     def _move_to_processed(self, file_path: Path) -> None:
         """Move an uploaded file to the processed directory."""

@@ -85,8 +85,20 @@ class PetpoojaAutomation:
 
                 target_path = f".tmp/downloads/{target_date}_report.csv"
                 if download_url != "DYNAMIC_LINK" and download_url.startswith("http"):
+                    print(
+                        f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Step 4: Initiating file download for {target_date}..."
+                    )
                     success = download_file(download_url, target_path)
-                    if success:
+
+                    # Robust verification
+                    if (
+                        success
+                        and os.path.exists(target_path)
+                        and os.path.getsize(target_path) > 0
+                    ):
+                        print(
+                            f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Step 5: Download completed and verified ({os.path.getsize(target_path)} bytes)."
+                        )
                         self.logger.mark_date_completed(
                             target_date, target_path, download_url
                         )
@@ -95,8 +107,12 @@ class PetpoojaAutomation:
                             f"Successfully downloaded and saved record for {target_date}.",
                         )
                     else:
+                        print(
+                            f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ERROR: Download failed or file is empty."
+                        )
                         self.logger.log_execution(
-                            "ERROR", f"Failed to download file for {target_date}"
+                            "ERROR",
+                            f"Failed to download file for {target_date} or file is empty.",
                         )
                 else:
                     # If it's a dynamic link or not a direct URL, we might need a different strategy
