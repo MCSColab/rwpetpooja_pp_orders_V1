@@ -5,7 +5,6 @@ Provides a unified logging interface for the entire project, ensuring all module
 write to the same daily log file with a consistent format.
 """
 
-import os
 import json
 import datetime
 import logging
@@ -42,9 +41,9 @@ class LoggerHelper:
         self._setup_logging()
 
     def _setup_logging(self) -> None:
-        """Configure project-wide logging to a daily file and console."""
-        datestamp = datetime.datetime.now().strftime("%Y-%m-%d")
-        log_file = self.log_dir / f"run_log_{datestamp}.log"
+        """Configure project-wide logging to a daily rotating file and console."""
+        # Base log filename - TimedRotatingFileHandler will append timestamps during rotation
+        self.log_file = self.log_dir / "automation_run.log"
 
         # Static logger initialization to ensure all instances share the same logger
         if LoggerHelper._logger is None:
@@ -53,9 +52,20 @@ class LoggerHelper:
 
             # Avoid duplicate handlers
             if not logger.handlers:
-                # File handler
-                file_handler = logging.FileHandler(log_file, encoding="utf-8")
-                # Updated format to be more professional: [YYYY-MM-DD HH:MM:SS] [LEVEL] [MODULE] MESSAGE
+                from logging.handlers import TimedRotatingFileHandler
+
+                # Daily rotation at midnight, keep 30 days of logs
+                file_handler = TimedRotatingFileHandler(
+                    self.log_file,
+                    when="midnight",
+                    interval=1,
+                    backupCount=30,
+                    encoding="utf-8",
+                )
+                # Ensure the rotated files have a clear date format
+                file_handler.suffix = "%Y-%m-%d"
+
+                # Updated format to be more professional: [YYYY-MM-DD HH:MM:SS] [LEVEL] MESSAGE
                 formatter = logging.Formatter(
                     "%(asctime)s [%(levelname)s] %(message)s",
                     datefmt="%Y-%m-%d %H:%M:%S",
@@ -71,6 +81,13 @@ class LoggerHelper:
             LoggerHelper._logger = logger
 
         self.logger = LoggerHelper._logger
+
+    def add_handler(self, handler: logging.Handler) -> None:
+        """Add an external handler to the logger (e.g., for GUI)."""
+        if self.logger:
+            # Check if this type of handler is already added
+            if not any(isinstance(h, type(handler)) for h in self.logger.handlers):
+                self.logger.addHandler(handler)
 
     def _init_state(self) -> None:
         """Initialize the state JSON file if it doesn't exist."""

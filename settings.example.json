@@ -1,19 +1,19 @@
 {
-    "download_dir": "c:/Work/RippleWalk/UC1petpooja/.tmp/downloads",
-    "processed_dir": "c:/Work/RippleWalk/UC1petpooja/.tmp/downloads/processed",
-    "browser_profile_dir": "c:/Work/RippleWalk/UC1petpooja/.tmp/browser_profile",
+    "download_dir": "./.tmp/downloads",
+    "processed_dir": "./.tmp/downloads/processed",
+    "browser_profile_dir": "./.tmp/browser_profile",
     "petpooja_url": "https://billing.petpooja.com/reports/order_summary_ho",
     "login_url": "https://billing.petpooja.com/",
     "email_enabled": true,
     "smtp_host": "smtp.gmail.com",
     "smtp_port": 587,
-    "smtp_user": "chummuch@pinkadrakft.com",
-    "smtp_pass": "ihso migk ylsv wrxo",
+    "smtp_user": "your_email@gmail.com",
+    "smtp_pass": "your_app_password",
     "email_receivers": [
-        "chummuch@pinkadrakft.com"
+        "receiver@example.com"
     ],
     "scheduler": {
-        "enabled": true,
+        "enabled": false,
         "days": [
             "Monday",
             "Tuesday",
@@ -23,6 +23,6 @@
             "Saturday",
             "Sunday"
         ],
-        "time": "22:17"
+        "time": "09:00"
     }
 }

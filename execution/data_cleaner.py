@@ -32,7 +32,9 @@ class DataCleaner:
         self.logger = self.logger_helper.logger
 
         self.download_dir = Path(self.settings.get("download_dir", ".tmp/downloads"))
-        self.processed_dir = self.download_dir / "Processed"
+        self.processed_dir = Path(
+            self.settings.get("processed_dir", self.download_dir / "processed")
+        )
         self.processed_dir.mkdir(parents=True, exist_ok=True)
 
     def _load_settings(self) -> Dict[str, Any]:
@@ -81,7 +83,17 @@ class DataCleaner:
             cleaned_df = self._transform_data(df)
 
             # 3. Save the cleaned file
-            output_filename = datetime.now().strftime("%d %b Sales.xlsx")
+            # Extract date from filename if possible (format: YYYY-MM-DD_report.csv)
+            try:
+                date_part = latest_file.name.split("_")[0]
+                processing_datetime = datetime.strptime(date_part, "%Y-%m-%d")
+            except Exception:
+                self.logger.warning(
+                    f"Could not parse date from filename {latest_file.name}. Using today's date."
+                )
+                processing_datetime = datetime.now()
+
+            output_filename = processing_datetime.strftime("%d %b Sales.xlsx")
             output_path = self.download_dir / output_filename
 
             self.logger.info(f"Saving cleaned report to: {output_path.name}...")
@@ -90,12 +102,16 @@ class DataCleaner:
             )
             cleaned_df.to_excel(output_path, index=False)
 
-            # 4. Move original to Processed folder
+            # 4. Move original to processed folder
             dest = self.processed_dir / latest_file.name
-            if dest.exists():
-                dest.unlink()
-            shutil.move(str(latest_file), str(dest))
-            self.logger.info("Moved original file to Processed folder.")
+            try:
+                if dest.exists():
+                    dest.unlink()
+                shutil.move(str(latest_file), str(dest))
+                self.logger.info(f"Moved original file to {self.processed_dir}")
+            except Exception as move_err:
+                self.logger.error(f"Failed to move file to processed: {move_err}")
+
             print(
                 f"[{datetime.now().strftime('%H:%M:%S')}] Step 5: Archiving original file."
             )

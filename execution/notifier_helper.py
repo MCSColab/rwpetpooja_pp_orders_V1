@@ -5,34 +5,48 @@ Handles automated email notifications for process success or failure,
 including log data in the email body.
 """
 
-import os
+import json
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from typing import Optional
-from dotenv import load_dotenv
-from execution.logger_helper import LoggerHelper
+from email.message import EmailMessage
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-load_dotenv()
+from execution.logger_helper import LoggerHelper
 
 
 class NotifierHelper:
     """Handles SMTP-based email notifications for Petpooja automation."""
 
-    def __init__(self) -> None:
-        """Initialize settings from environment variables."""
+    def __init__(self, settings_path: str | Path = "settings.json") -> None:
+        """Initialize settings from settings.json."""
+        self.settings_path = Path(settings_path)
+        self.settings: Dict[str, Any] = self._load_settings()
         self.logger_helper = LoggerHelper()
         self.logger = self.logger_helper.logger
 
-        self.smtp_host = os.getenv("SMTP_HOST")
-        self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        self.smtp_user = os.getenv("SMTP_USER")
-        self.smtp_pass = os.getenv("SMTP_PASS")
-        self.receiver = os.getenv("EMAIL_RECEIVER")
+        # Email Settings from settings.json
+        self.email_enabled = self.settings.get("email_enabled", False)
+        self.smtp_host = self.settings.get("smtp_host")
+        self.smtp_port = int(self.settings.get("smtp_port", 587))
+        self.smtp_user = self.settings.get("smtp_user")
+        self.smtp_pass = self.settings.get("smtp_pass")
+        self.receivers = self.settings.get("email_receivers", [])
+
+    def _load_settings(self) -> Dict[str, Any]:
+        """Load global app settings."""
+        if not self.settings_path.exists():
+            return {}
+        try:
+            with open(self.settings_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            if hasattr(self, "logger"):
+                self.logger.error(f"Failed to load settings in NotifierHelper: {e}")
+            return {}
 
     def send_status_email(self, success: bool, log_data: Optional[str] = None) -> bool:
         """
-        Send a status report email.
+        Send a status report email using EmailMessage (matching reference implementation).
 
         Args:
             success: Whether the automation process finished successfully.
@@ -41,9 +55,13 @@ class NotifierHelper:
         Returns:
             True if email sent successfully, False otherwise.
         """
-        if not all([self.smtp_host, self.smtp_user, self.smtp_pass, self.receiver]):
+        if not self.email_enabled:
+            self.logger.info("Email notification is disabled in settings.")
+            return False
+
+        if not all([self.smtp_host, self.smtp_user, self.smtp_pass, self.receivers]):
             self.logger.warning(
-                "Email settings missing in .env. Skipping email notification."
+                "Email settings missing in settings.json. Skipping email notification."
             )
             return False
 
@@ -58,19 +76,19 @@ class NotifierHelper:
             "Process Logs:\n"
             "--------------------------------------------------\n"
         )
-        if log_data:
-            body += log_data
-        else:
-            body += "No log data provided."
+        body += log_data if log_data else "No log data provided."
 
-        msg = MIMEMultipart()
-        msg["From"] = self.smtp_user
-        msg["To"] = self.receiver
+        # Use EmailMessage as in reference implementation
+        msg = EmailMessage()
         msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain"))
+        msg["From"] = self.smtp_user
+        msg["To"] = ", ".join(self.receivers)
+        msg.set_content(body)
 
         try:
-            self.logger.info(f"Attempting to send email to {self.receiver}...")
+            self.logger.info(
+                f"Attempting to send email to {', '.join(self.receivers)} via {self.smtp_host}..."
+            )
             with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
                 server.starttls()
                 server.login(self.smtp_user, self.smtp_pass)
@@ -85,4 +103,6 @@ class NotifierHelper:
 if __name__ == "__main__":
     # Test block
     notifier = NotifierHelper()
-    notifier.send_status_email(True, "Standalone test log message.")
+    notifier.send_status_email(
+        True, "Standalone test log message from Petpooja Automation."
+    )

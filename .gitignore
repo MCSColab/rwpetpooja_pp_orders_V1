@@ -23,3 +23,7 @@ gdrive/uploaded_files.json
 .vscode/
 .idea/
 *.swp
+
+# Local Settings
+settings.json
+gdrive/config.txt

@@ -53,6 +53,13 @@ class PetpoojaAutomation:
                     )
                     page = await browser.get(self.settings["petpooja_url"])
 
+            # Final Login Verification hurdle
+            if "login" in page.url.lower():
+                self.logger.log_execution(
+                    "ERROR", "Failed to bypass login page. Aborting automation."
+                )
+                return
+
             # Wait for report page to load
             await asyncio.sleep(5)
 
@@ -172,60 +179,128 @@ class PetpoojaAutomation:
             if google_btn:
                 await google_btn.click()
                 self.logger.log_execution(
-                    "INFO", "Clicked Google Sign-in. Waiting for redirection..."
+                    "INFO", "Clicked Google Sign-in. Monitoring multi-page flow..."
                 )
 
-                # Wait for any redirection to a Petpooja internal page
-                for _ in range(15):
-                    await asyncio.sleep(2)
-                    current_url = page.url
-                    self.logger.log_execution("INFO", f"Redirection URL: {current_url}")
-
-                    # If we are internal (not on login/google anymore)
-                    if (
-                        "billing.petpooja.com" in current_url
-                        and "login" not in current_url.lower()
-                    ):
+                # Monitor and handle intermediate Google pages
+                login_triggered = False
+                for attempt in range(25):
+                    try:
+                        await asyncio.sleep(2)
+                        current_url = page.url
                         self.logger.log_execution(
-                            "INFO",
-                            "Google Login appears successful (internal page reached).",
+                            "DEBUG",
+                            f"Login Flow URL (attempt {attempt + 1}): {current_url}",
                         )
-                        break
 
-                # After redirection, ensure we are on the reports page
+                        # Case: Successful login back to Petpooja Dashboard or Report
+                        if (
+                            "billing.petpooja.com" in current_url
+                            and "login" not in current_url.lower()
+                        ):
+                            self.logger.log_execution(
+                                "INFO",
+                                "Detected successful redirect to Petpooja internal page.",
+                            )
+                            login_triggered = True
+                            break
+
+                        # Case: Google Account Chooser
+                        if (
+                            "accountchooser" in current_url.lower()
+                            or "AccountChooser" in current_url
+                        ):
+                            self.logger.log_execution(
+                                "INFO", "Handling Google Account Chooser..."
+                            )
+                            # Target the specific email from settings/env
+                            account_selector = f'div[data-email="{self.username}"]'
+                            account_div = await page.find(
+                                account_selector, best_match=True
+                            )
+                            if account_div:
+                                await account_div.click()
+                                self.logger.log_execution(
+                                    "INFO", f"Selected Google account: {self.username}"
+                                )
+                                continue
+
+                        # Case: Google OAuth Consent/ID Confirmation ("Continue")
+                        if (
+                            "/signin/oauth/id" in current_url.lower()
+                            or "consent" in current_url.lower()
+                        ):
+                            self.logger.log_execution(
+                                "INFO", "Handling Google OAuth Confirmation..."
+                            )
+                            # Try finding button by text or selector
+                            continue_btn = await page.find("Continue", best_match=True)
+                            if not continue_btn:
+                                # Fallback selectors for Google's specific buttons
+                                continue_btn = await page.select(
+                                    'button:has-text("Continue")'
+                                ) or await page.select('span:has-text("Continue")')
+
+                            if continue_btn:
+                                await continue_btn.click()
+                                self.logger.log_execution(
+                                    "INFO", "Clicked Google OAuth 'Continue' button."
+                                )
+                                continue
+
+                    except Exception as e:
+                        # Catch CDP session errors or element detached errors during reloads
+                        if (
+                            "session with given id" in str(e).lower()
+                            or "detached" in str(e).lower()
+                        ):
+                            self.logger.log_execution(
+                                "DEBUG", f"Transient browser error (CDP/Detached): {e}"
+                            )
+                            await asyncio.sleep(2)
+                        else:
+                            raise e
+
+                # After redirection or loop completion, ensure we reached the destination
                 reports_url = self.settings.get("petpooja_url")
-                if reports_url not in page.url:
-                    self.logger.log_execution(
-                        "INFO",
-                        f"Not on reports page ({page.url}). Forcing navigation to {reports_url}",
-                    )
-                    await page.goto(reports_url)
-                    await asyncio.sleep(5)
-                    self.logger.log_execution(
-                        "INFO", f"URL after forced navigation: {page.url}"
-                    )
+                if (
+                    login_triggered
+                    or reports_url in page.url
+                    or "dashboard" in page.url
+                ):
+                    if reports_url not in page.url:
+                        self.logger.log_execution(
+                            "INFO", f"Navigating to reports page: {reports_url}"
+                        )
+                        await page.get(reports_url)
+                        await asyncio.sleep(5)
 
-                if reports_url in page.url:
-                    self.logger.log_execution(
-                        "INFO", "Successfully reached reports page via Google Login."
-                    )
-                    return
+                    if reports_url in page.url:
+                        self.logger.log_execution(
+                            "INFO", "Successfully authenticated via Google."
+                        )
+                        return
 
                 if "login" in page.url:
                     self.logger.log_execution(
                         "WARNING",
-                        "Redirected back to login page after forced navigation. Authentication might have failed.",
+                        "Redirection finished but still on login page. Google Login might have failed.",
                     )
 
             else:
                 self.logger.log_execution("WARNING", "Google Sign-in button not found.")
         except Exception as e:
-            self.logger.log_execution(
-                "WARNING", f"Google Sign-in attempt failed: {str(e)}"
-            )
+            self.logger.log_execution("WARNING", f"Google Sign-in flow error: {str(e)}")
 
         # Fallback to manual/standard login if Google Login didn't finish on reports page
         current_url = page.url
+        if "accounts.google.com" in current_url:
+            self.logger.log_execution(
+                "ERROR",
+                "Stuck on Google account page. Fallback aborted to avoid conflicts.",
+            )
+            return
+
         if (
             "login" not in current_url.lower()
             and self.settings.get("petpooja_url") in current_url
@@ -244,7 +319,7 @@ class PetpoojaAutomation:
                         "INFO", f"Manual login detected at {page.url}"
                     )
                     if self.settings.get("petpooja_url") not in page.url:
-                        await page.goto(self.settings.get("petpooja_url"))
+                        await page.get(self.settings.get("petpooja_url"))
                     return
                 await asyncio.sleep(1)
             self.logger.log_execution("ERROR", "Manual login timed out.")

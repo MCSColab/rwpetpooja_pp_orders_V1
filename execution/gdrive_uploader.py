@@ -11,6 +11,7 @@ It is compliant with Python 3.13+ standards and uses PEP 585/604 type hints.
 import json
 import shutil
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Tuple, Dict
 from dataclasses import dataclass, asdict
@@ -114,6 +115,45 @@ class GoogleDriveService:
 
         self.service = build("drive", "v3", credentials=self.credentials)
         return True
+
+    def get_or_create_folder(self, parent_id: str, name: str) -> Optional[str]:
+        """
+        Finds a folder by name under a parent folder or creates it if it doesn't exist.
+
+        Args:
+            parent_id: Google Drive folder ID to search within.
+            name: Folder name to find or create.
+
+        Returns:
+            The folder ID, or None if an error occurs.
+        """
+        if not self.service:
+            return None
+
+        try:
+            # Search for existing folder
+            query = f"name = '{name}' and '{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            results = (
+                self.service.files()
+                .list(q=query, spaces="drive", fields="files(id, name)")
+                .execute()
+            )
+            files = results.get("files", [])
+
+            if files:
+                return files[0].get("id")
+
+            # Create if not found
+            metadata = {
+                "name": name,
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": [parent_id],
+            }
+            folder = self.service.files().create(body=metadata, fields="id").execute()
+            return folder.get("id")
+        except Exception as e:
+            self.logger.error(f"Error getting/creating folder '{name}': {e}")
+            return None
 
     def upload_file(
         self, file_path: Path, folder_id: str, mime_type: Optional[str] = None
@@ -239,12 +279,65 @@ class GDriveUploader:
             return
 
         for file_path in files:
-            self.logger.info(f"Uploading {file_path.name}...")
+            # Determine processing date from filename (e.g. "23 Jan Sales.xlsx")
+            # Or fallout to current date if parsing fails
+            try:
+                # Format: "DD Mon Sales.xlsx"
+                date_str = file_path.name.split(" Sales")[0]
+                # We need the year to calculate FY properly.
+                # Since these are daily reports for 'yesterday', we can assume context.
+                # If today is Jan 2026, and file is '23 Jan Sales', it's 2026.
+                # If today is Jan 2026, and file is '31 Dec Sales', it's 2025.
+                now = datetime.now()
+                temp_date = datetime.strptime(f"{date_str} {now.year}", "%d %b %Y")
+
+                # Correction if it's the wrap of the year
+                if temp_date > now:
+                    temp_date = datetime.strptime(
+                        f"{date_str} {now.year - 1}", "%d %b %Y"
+                    )
+
+                # FY Calculation (Starts April)
+                if temp_date.month >= 4:
+                    fy_str = f"FY {temp_date.year}-{str(temp_date.year + 1)[2:]}"
+                else:
+                    fy_str = f"FY {temp_date.year - 1}-{str(temp_date.year)[2:]}"
+
+                month_folder_name = f"{temp_date.strftime('%b')} sales"
+            except Exception:
+                # Fallback to current month if we can't parse
+                now = datetime.now()
+                if now.month >= 4:
+                    fy_str = f"FY {now.year}-{str(now.year + 1)[2:]}"
+                else:
+                    fy_str = f"FY {now.year - 1}-{str(now.year)[2:]}"
+                month_folder_name = f"{now.strftime('%b')} sales"
+
+            self.logger.info(
+                f"Uploading {file_path.name} to {fy_str}/{month_folder_name}..."
+            )
+
+            # Navigate/Create hierarchy
+            fy_id = self.drive_service.get_or_create_folder(gdrive_folder_id, fy_str)
+            target_folder_id = None
+            if fy_id:
+                target_folder_id = self.drive_service.get_or_create_folder(
+                    fy_id, month_folder_name
+                )
+
+            if not target_folder_id:
+                self.logger.error(
+                    "Could not determine or create GDrive folder hierarchy."
+                )
+                target_folder_id = (
+                    gdrive_folder_id  # Fallback to root if hierarchy fails
+                )
+
             print(
-                f"[{datetime.now().strftime('%H:%M:%S')}] Step 3: Uploading {file_path.name} to Google Drive..."
+                f"[{datetime.now().strftime('%H:%M:%S')}] Step 3: Uploading {file_path.name} to GDrive ({fy_str}/{month_folder_name})..."
             )
             success, result = self.drive_service.upload_file(
-                file_path, gdrive_folder_id
+                file_path, target_folder_id
             )
 
             if success:
@@ -258,11 +351,12 @@ class GDriveUploader:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
     def _move_to_processed(self, file_path: Path) -> None:
-        """Move an uploaded file to the processed directory."""
+        """Move an uploaded file to the processed directory, overwriting if needed."""
         dest = self.processed_dir / file_path.name
-        if dest.exists():
-            dest.unlink()
         try:
+            # Overwrite logic
+            if dest.exists():
+                dest.unlink()
             shutil.move(str(file_path), str(dest))
             self.logger.info(f"Moved {file_path.name} to {self.processed_dir}")
         except Exception as e:
