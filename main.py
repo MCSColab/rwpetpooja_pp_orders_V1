@@ -5,6 +5,7 @@ import traceback
 from execution.petpooja_automation import PetpoojaAutomation
 from execution.logger_helper import LoggerHelper
 from execution.gdrive_uploader import GDriveUploader
+from execution.data_cleaner import DataCleaner
 
 
 async def main():
@@ -15,7 +16,20 @@ async def main():
         automation = PetpoojaAutomation()
         await automation.run()
         logger.log_execution("INFO", "Automation process finished.")
-        
+
+        logger.log_execution("INFO", "Starting Data Cleaning process")
+        cleaner = DataCleaner()
+        cleaned_file = cleaner.process_latest_report()
+        if cleaned_file:
+            logger.log_execution(
+                "INFO", f"Data cleaning finished. Cleaned file: {cleaned_file.name}"
+            )
+        else:
+            logger.log_execution(
+                "WARNING",
+                "Data cleaning skipped (no new file found or error occurred).",
+            )
+
         logger.log_execution("INFO", "Starting Google Drive upload process")
         uploader = GDriveUploader()
         uploader.process_files()
@@ -43,7 +57,9 @@ def run_with_cleanup():
     """Run the async main function with proper cleanup for Windows."""
     # Suppress ResourceWarnings about unclosed transports
     warnings.filterwarnings("ignore", category=ResourceWarning)
-    warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine.*was never awaited")
+    warnings.filterwarnings(
+        "ignore", category=RuntimeWarning, message="coroutine.*was never awaited"
+    )
 
     # Install hook to suppress cleanup exceptions in __del__ methods
     sys.unraisablehook = suppress_cleanup_exceptions
@@ -66,7 +82,9 @@ def run_with_cleanup():
 
             # Allow cancelled tasks to finish
             if pending:
-                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
 
             # Shutdown async generators
             loop.run_until_complete(loop.shutdown_asyncgens())
