@@ -6,11 +6,14 @@ import json
 # Load settings once at module level
 _settings = None
 
+
 def _get_settings():
     global _settings
     if _settings is None:
-        settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.json')
-        with open(settings_path, 'r') as f:
+        settings_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "settings.json"
+        )
+        with open(settings_path, "r") as f:
             _settings = json.load(f)
     return _settings
 
@@ -24,36 +27,50 @@ async def get_browser():
     settings = _get_settings()
 
     # Use absolute path from settings, fallback to default
-    if 'browser_profile_dir' in settings:
-        profile_path = settings['browser_profile_dir']
+    if "browser_profile_dir" in settings:
+        profile_path = settings["browser_profile_dir"]
     else:
         # Fallback: use project root directory (not .tmp which suggests temporary)
-        profile_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'browser_profile')
+        profile_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "browser_profile"
+        )
 
     # Ensure path uses proper separators for the OS
     profile_path = os.path.normpath(profile_path)
     os.makedirs(profile_path, exist_ok=True)
 
-    # Start browser with persistent profile
-    # The user_data_dir parameter ensures all cookies, localStorage,
-    # and session data are saved and restored
-    browser = await uc.start(user_data_dir=profile_path)
+    # Start browser with persistent profile and flags to suppress popups
+    # browser_args documentation: https://github.com/ultrafunkamsterdam/nodriver
+    browser = await uc.start(
+        user_data_dir=profile_path,
+        browser_args=[
+            "--disable-session-crashed-bubble",
+            "--disable-infobars",
+            "--no-first-run",
+            "--disable-notifications",
+        ],
+    )
     return browser
+
 
 async def wait_for_login(page, timeout=60):
     """
-    Waits for the user to be logged in or for a specific element that indicates 
+    Waits for the user to be logged in or for a specific element that indicates
     a successful login/dashboard access.
     """
     # Check if we are redirected to login
     current_url = page.url
-    if "billing.petpooja.com/users/dashboard" in current_url or "reports/order_summary_ho" in current_url:
+    if (
+        "billing.petpooja.com/users/dashboard" in current_url
+        or "reports/order_summary_ho" in current_url
+    ):
         return True
-        
+
     print("Waiting for login...")
     # This is a placeholder for actual login logic or waiting for manual login if needed
     # In a fully automated flow, we would call a login function here.
     return False
+
 
 if __name__ == "__main__":
     import warnings

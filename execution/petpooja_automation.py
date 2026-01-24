@@ -147,7 +147,7 @@ class PetpoojaAutomation:
             self.logger.log_execution("DEBUG", f"Browser cleanup notice: {str(e)}")
 
     async def handle_login(self, page):
-        self.logger.log_execution("INFO", "Handling login...")
+        self.logger.log_execution("INFO", f"Handling login. Current URL: {page.url}")
 
         # Step 0: Try Google Sign-in first
         try:
@@ -159,28 +159,64 @@ class PetpoojaAutomation:
                     "INFO", "Clicked Google Sign-in. Waiting for redirection..."
                 )
 
-                # Wait for redirection to reports page (URL1)
-                reports_url = self.settings.get("petpooja_url")
-                for _ in range(10):
-                    if reports_url in page.url:
-                        self.logger.log_execution("INFO", "Google Login successful!")
-                        return
+                # Wait for any redirection to a Petpooja internal page
+                for _ in range(15):
                     await asyncio.sleep(2)
+                    current_url = page.url
+                    self.logger.log_execution("INFO", f"Redirection URL: {current_url}")
 
-                self.logger.log_execution(
-                    "WARNING",
-                    "Google Sign-in did not redirect to reports page. Navigating back to login page.",
-                )
-                await page.goto(self.settings.get("login_url"))
-                await asyncio.sleep(2)
+                    # If we are internal (not on login/google anymore)
+                    if (
+                        "billing.petpooja.com" in current_url
+                        and "login" not in current_url.lower()
+                    ):
+                        self.logger.log_execution(
+                            "INFO",
+                            "Google Login appears successful (internal page reached).",
+                        )
+                        break
+
+                # After redirection, ensure we are on the reports page
+                reports_url = self.settings.get("petpooja_url")
+                if reports_url not in page.url:
+                    self.logger.log_execution(
+                        "INFO",
+                        f"Not on reports page ({page.url}). Forcing navigation to {reports_url}",
+                    )
+                    await page.goto(reports_url)
+                    await asyncio.sleep(5)
+                    self.logger.log_execution(
+                        "INFO", f"URL after forced navigation: {page.url}"
+                    )
+
+                if reports_url in page.url:
+                    self.logger.log_execution(
+                        "INFO", "Successfully reached reports page via Google Login."
+                    )
+                    return
+
+                if "login" in page.url:
+                    self.logger.log_execution(
+                        "WARNING",
+                        "Redirected back to login page after forced navigation. Authentication might have failed.",
+                    )
+
             else:
                 self.logger.log_execution("WARNING", "Google Sign-in button not found.")
         except Exception as e:
             self.logger.log_execution(
                 "WARNING", f"Google Sign-in attempt failed: {str(e)}"
             )
-            await page.goto(self.settings.get("login_url"))
 
+        # Fallback to manual/standard login if Google Login didn't finish on reports page
+        current_url = page.url
+        if (
+            "login" not in current_url.lower()
+            and self.settings.get("petpooja_url") in current_url
+        ):
+            return
+
+        self.logger.log_execution("INFO", "Proceeding with standard login fallback.")
         if not self.username or not self.password:
             self.logger.log_execution(
                 "WARNING", "Credentials missing in .env. Waiting for manual login..."
@@ -188,7 +224,11 @@ class PetpoojaAutomation:
             # Wait for manual login (user interaction)
             for _ in range(60):
                 if "dashboard" in page.url or "order_summary_ho" in page.url:
-                    self.logger.log_execution("INFO", "Manual login detected.")
+                    self.logger.log_execution(
+                        "INFO", f"Manual login detected at {page.url}"
+                    )
+                    if self.settings.get("petpooja_url") not in page.url:
+                        await page.goto(self.settings.get("petpooja_url"))
                     return
                 await asyncio.sleep(1)
             self.logger.log_execution("ERROR", "Manual login timed out.")
@@ -196,7 +236,8 @@ class PetpoojaAutomation:
 
         try:
             self.logger.log_execution(
-                "INFO", "Attempting automated multi-step login..."
+                "INFO",
+                f"Attempting automated multi-step login... Current URL: {page.url}",
             )
 
             # Step 1: Email
@@ -205,15 +246,16 @@ class PetpoojaAutomation:
             )
             if email_field:
                 await email_field.send_keys(self.username)
-                # The "Continue" button is a submit button in the first form
                 continue_btn = await page.find(
                     'button[type="submit"]'
                 ) or await page.find("Continue", best_match=True)
                 if continue_btn:
                     await continue_btn.click()
-                    await asyncio.sleep(3)  # Wait for password step
+                    await asyncio.sleep(3)
                 else:
                     self.logger.log_execution("WARNING", "Continue button not found.")
+
+            self.logger.log_execution("INFO", f"URL after Email step: {page.url}")
 
             # Step 2: Password
             password_field = await page.find("#UserPassword") or await page.find(
@@ -221,17 +263,30 @@ class PetpoojaAutomation:
             )
             if password_field:
                 await password_field.send_keys(self.password)
-                # The "Sign In" button is also a submit button in the second step
                 signin_btn = await page.find(
                     'button[type="submit"]'
                 ) or await page.find("Sign In", best_match=True)
                 if signin_btn:
                     await signin_btn.click()
-                    await asyncio.sleep(5)  # Wait for dashboard
+                    await asyncio.sleep(5)
             else:
                 self.logger.log_execution(
                     "WARNING",
                     "Password field not found. Maybe it's a different login type?",
+                )
+
+            self.logger.log_execution("INFO", f"URL after Sign In: {page.url}")
+
+            # Post-login navigation check
+            if self.settings.get("petpooja_url") not in page.url:
+                self.logger.log_execution(
+                    "INFO",
+                    f"Post-login redirect was to {page.url}. Forcing navigation to report page.",
+                )
+                await page.goto(self.settings.get("petpooja_url"))
+                await asyncio.sleep(5)
+                self.logger.log_execution(
+                    "INFO", f"Final URL after forced redirect: {page.url}"
                 )
 
         except Exception as e:
