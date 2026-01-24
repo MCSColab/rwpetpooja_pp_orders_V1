@@ -1,6 +1,9 @@
 nodriver
 requests
 python-dotenv
+pandas
+openpyxl
 google-api-python-client>=2.100.0
 google-auth-httplib2>=0.1.1
 google-auth-oauthlib>=1.1.0
+ruff  # For code quality and formatting
