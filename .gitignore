@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+venv/
+ENV/
+
+# Project specifics
+.tmp/
+logs/
+execution/state.json
+
+# Google Drive API Secrets and local state
+gdrive/token.json
+gdrive/client_secret*.json
+gdrive/uploaded_files.json
+
+# IDEs
+.vscode/
+.idea/
+*.swp

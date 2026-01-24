@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /s \"c:\\\\Work\\\\RippleWalk\\\\UC1petpooja\")",
+      "Bash(python:*)",
+      "Bash(dir:*)"
+    ]
+  }
+}
