@@ -18,10 +18,12 @@ from tkinter import messagebox, scrolledtext, ttk
 
 from execution.browser_helper import setup_browser
 from execution.data_cleaner import DataCleaner
-from execution.gdrive_uploader import GDriveUploader
+# from execution.gdrive_uploader import GDriveUploader
+from execution.pgsql_uploader import PostgresUploader
 from execution.logger_helper import LoggerHelper
 from execution.notifier_helper import NotifierHelper
 from execution.petpooja_automation import PetpoojaAutomation
+import pandas as pd
 
 # --- UI THEME CONSTANTS ---
 COLORS = {
@@ -465,8 +467,16 @@ class PetpoojaGUI:
             "Petpooja Password",
         )
 
-        # 3. GDrive Settings (gdrive/config.txt)
-        self.add_section_header(scrollable_frame, "Google Drive (gdrive/config.txt)")
+        # 3. PostgreSQL Database (.env)
+        self.add_section_header(scrollable_frame, "PostgreSQL Database (.env)")
+        self.add_setting_row(scrollable_frame, "DB_HOST", env_data.get("DB_HOST", ""), "env", "Database Host")
+        self.add_setting_row(scrollable_frame, "DB_PORT", env_data.get("DB_PORT", ""), "env", "Database Port")
+        self.add_setting_row(scrollable_frame, "DB_NAME", env_data.get("DB_NAME", ""), "env", "Database Name")
+        self.add_setting_row(scrollable_frame, "DB_USER", env_data.get("DB_USER", ""), "env", "Database User")
+        self.add_setting_row(scrollable_frame, "DB_PASS", env_data.get("DB_PASS", ""), "env", "Database Password")
+
+        # 4. GDrive Settings (gdrive/config.txt)
+        self.add_section_header(scrollable_frame, "Google Drive (Legacy - gdrive/config.txt)")
         gdrive_data = self.load_env(self.gdrive_config_path)
         self.add_setting_row(
             scrollable_frame,
@@ -729,11 +739,27 @@ class PetpoojaGUI:
             automation = PetpoojaAutomation()
             loop.run_until_complete(automation.run())
 
+            logger.info("Starting Data Cleaning process")
             cleaner = DataCleaner()
-            _ = cleaner.process_latest_report()
+            cleaned_file_path = cleaner.process_latest_report()
 
-            uploader = GDriveUploader()
-            uploader.process_files()
+            if cleaned_file_path and os.path.exists(cleaned_file_path):
+                logger.info(f"Uploading records from {cleaned_file_path.name} to PostgreSQL...")
+                # Read cleaned XLSX
+                df = pd.read_excel(cleaned_file_path)
+                
+                # Initialize and run DB upload
+                db_uploader = PostgresUploader()
+                if db_uploader.insert_dataframe(df):
+                    logger.info("Database records inserted/updated successfully.")
+                else:
+                    logger.error("Failed to insert records into PostgreSQL.")
+                    success = False
+            else:
+                logger.warning("No cleaned file found to upload to database.")
+
+            # uploader = GDriveUploader()
+            # uploader.process_files()
 
             success = True
         except Exception as e:

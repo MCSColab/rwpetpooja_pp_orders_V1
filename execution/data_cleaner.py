@@ -105,10 +105,17 @@ class DataCleaner:
             # 4. Move original to processed folder
             dest = self.processed_dir / latest_file.name
             try:
+                # Robust overwrite move for Windows
                 if dest.exists():
-                    dest.unlink()
+                    try:
+                        dest.unlink()
+                    except Exception as unlink_err:
+                        self.logger.warning(f"Could not unlink existing file {dest}: {unlink_err}")
+                
+                # Perform the move using shutil.move which is safer across drives, 
+                # but we've handled the target deletion to ensure it's overwritten.
                 shutil.move(str(latest_file), str(dest))
-                self.logger.info(f"Moved original file to {self.processed_dir}")
+                self.logger.info(f"Moved original file to processed folder: {dest}")
             except Exception as move_err:
                 self.logger.error(f"Failed to move file to processed: {move_err}")
 

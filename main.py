@@ -5,9 +5,11 @@ import warnings
 import traceback
 from execution.petpooja_automation import PetpoojaAutomation
 from execution.logger_helper import LoggerHelper
-from execution.gdrive_uploader import GDriveUploader
+# from execution.gdrive_uploader import GDriveUploader
+from execution.pgsql_uploader import PostgresUploader
 from execution.data_cleaner import DataCleaner
 from execution.notifier_helper import NotifierHelper
+import pandas as pd
 
 
 async def main():
@@ -28,15 +30,26 @@ async def main():
         cleaned_file = cleaner.process_latest_report()
         if cleaned_file:
             logger.info(f"Data cleaning finished. Cleaned file: {cleaned_file.name}")
+            
+            # Step: Insert into PostgreSQL
+            logger.info("Starting PostgreSQL upload process")
+            df = pd.read_excel(cleaned_file)
+            pgsql_uploader = PostgresUploader()
+            if pgsql_uploader.insert_dataframe(df):
+                logger.info("PostgreSQL upload process finished successfully.")
+            else:
+                logger.error("PostgreSQL upload process failed.")
+                # We might want to set success to False here if DB upload is critical
+                # success = False 
         else:
             logger.warning(
                 "Data cleaning skipped (no new file found or error occurred)."
             )
 
-        logger.info("Starting Google Drive upload process")
-        uploader = GDriveUploader()
-        uploader.process_files()
-        logger.info("Google Drive upload process finished.")
+        # logger.info("Starting Google Drive upload process")
+        # uploader = GDriveUploader()
+        # uploader.process_files()
+        # logger.info("Google Drive upload process finished.")
         success = True
 
     except Exception as e:
