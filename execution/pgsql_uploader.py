@@ -42,7 +42,7 @@ class PostgresUploader:
             self.logger.error(f"Failed to initialize database engine: {e}")
             raise
 
-    def insert_dataframe(self, df: pd.DataFrame, table_name: str = "p_orders", schema: str = "zohoanalytics") -> bool:
+    def insert_dataframe(self, df: pd.DataFrame, table_name: str = "P_orders", schema: str = "zohoanalytics") -> bool:
         """
         Inserts a pandas DataFrame into the specified PostgreSQL table.
         Uses an 'upsert' pattern (on conflict do update) based on invoice_no.
@@ -95,7 +95,7 @@ class PostgresUploader:
                 update_stmt = ", ".join([f"{col} = EXCLUDED.{col}" for col in target_cols if col != "invoice_no"])
                 
                 upsert_query = f"""
-                    INSERT INTO {schema}.{table_name} ({cols_str})
+                    INSERT INTO {schema}."{table_name}" ({cols_str})
                     SELECT {select_str} FROM temp_orders
                     ON CONFLICT (invoice_no) 
                     DO UPDATE SET {update_stmt};

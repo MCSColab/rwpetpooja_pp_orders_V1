@@ -170,6 +170,31 @@ class PetpoojaGUI:
         toolbar = tk.Frame(self.control_tab, bg=COLORS["bg_dark"], pady=10)
         toolbar.pack(fill="x")
 
+        # Execution Selection Dropdown
+        tk.Label(
+            toolbar,
+            text="Execution Mode:",
+            font=("Segoe UI Semibold", 10),
+            bg=COLORS["bg_dark"],
+            fg=COLORS["fg_med"],
+        ).pack(side="left", padx=(10, 5))
+
+        self.execution_mode_var = tk.StringVar(value="Smart Pipeline (Requests + Playwright)")
+        self.mode_selector = ttk.Combobox(
+            toolbar,
+            textvariable=self.execution_mode_var,
+            values=[
+                "Smart Pipeline (Requests + Playwright)", 
+                "Playwright Firefox (Headless)",
+                "Nodriver Chrome (Visible)",
+                "Requests Only (Fast Path API)"
+            ],
+            state="readonly",
+            width=35,
+            font=("Segoe UI", 10),
+        )
+        self.mode_selector.pack(side="left", padx=(0, 20))
+
         # Swapped order: Execute first, then Setup
         self.start_btn = tk.Button(
             toolbar,
@@ -727,56 +752,104 @@ class PetpoojaGUI:
         threading.Thread(target=self.automation_thread, daemon=True).start()
 
     def automation_thread(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
+        import subprocess
         success = False
+        mode = self.execution_mode_var.get()
+        logger = self.logger_helper.logger
+
+        logger.info(f"Starting Order Summary Automation in mode: {mode}")
+
         try:
-            # Re-init logger for this run
-            logger = self.logger_helper.logger
-            logger.info("Starting Petpooja Order Summary Report Automation")
-
-            automation = PetpoojaAutomation()
-            loop.run_until_complete(automation.run())
-
-            logger.info("Starting Data Cleaning process")
-            cleaner = DataCleaner()
-            cleaned_file_path = cleaner.process_latest_report()
-
-            if cleaned_file_path and os.path.exists(cleaned_file_path):
-                logger.info(f"Uploading records from {cleaned_file_path.name} to PostgreSQL...")
-                # Read cleaned XLSX
-                df = pd.read_excel(cleaned_file_path)
+            if mode == "Smart Pipeline (Requests + Playwright)":
+                from main import run_pipeline
+                # Instead of subprocess, we run the function directly
+                # Wait, main.py uses asyncio internally, so we need to call subprocess or let it run
+                # Using subprocess here simplifies the async loops and thread isolation
+                result = subprocess.run(["python", "main.py"], capture_output=True, text=True, encoding='utf-8')
                 
-                # Initialize and run DB upload
-                db_uploader = PostgresUploader()
-                if db_uploader.insert_dataframe(df):
-                    logger.info("Database records inserted/updated successfully.")
-                else:
-                    logger.error("Failed to insert records into PostgreSQL.")
-                    success = False
+                # Output to GUI
+                if result.stdout:
+                    for line in result.stdout.splitlines():
+                        if "[INFO]" in line or "[ERROR]" in line or "[WARNING]" in line:
+                            continue # Assume logs are piped via file anyway
+                        else:
+                            self.log_gui(line, "INFO")
+                if result.stderr:
+                    for line in result.stderr.splitlines():
+                        self.log_gui(line, "ERROR")
+
+                success = result.returncode == 0
+                
+                # NOTE: main.py already handles Email sending, Data Cleaning, and DB uploading natively.
+                # So we do not need to repeat Database stuff here if mode is Smart Pipeline.
+                
             else:
-                logger.warning("No cleaned file found to upload to database.")
+                # We handle the other modes explicitly in GUI thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                downloaded_file = None
+                
+                if mode == "Requests Only (Fast Path API)":
+                    from execution.petpooja_requests import PetpoojaRequestsClient
+                    client = PetpoojaRequestsClient()
+                    downloaded_file = client.run()
+                    
+                elif mode == "Playwright Firefox (Headless)":
+                    from execution.playwright_automation import PlaywrightAutomation
+                    bot = PlaywrightAutomation()
+                    downloaded_file = loop.run_until_complete(bot.run())
+                    
+                elif mode == "Nodriver Chrome (Visible)":
+                    # For Nodriver we use subprocess to avoid __del__ transport errors in Tkinter thread
+                    result = subprocess.run(["python", "main_chrome_utf8.py"], capture_output=True, text=True, encoding='utf-8')
+                    if result.returncode == 0:
+                        success = True
+                    else:
+                        success = False
+                        logger.error(result.stderr)
+                    # Note: main_chrome_utf8.py also handles data cleaning and upload internally
 
-            # uploader = GDriveUploader()
-            # uploader.process_files()
+                # If we used Requests or Playwright standalone, we need to do DataClean/DBUpload manually
+                if mode in ["Requests Only (Fast Path API)", "Playwright Firefox (Headless)"]:
+                    if downloaded_file and os.path.exists(downloaded_file):
+                        logger.info("Starting Data Cleaning process")
+                        cleaner = DataCleaner()
+                        cleaned_file_path = cleaner.process_latest_report()
 
-            success = True
+                        if cleaned_file_path and os.path.exists(cleaned_file_path):
+                            logger.info(f"Uploading records from {cleaned_file_path.name} to PostgreSQL...")
+                            df = pd.read_excel(cleaned_file_path)
+                            db_uploader = PostgresUploader()
+                            if db_uploader.insert_dataframe(df):
+                                logger.info("Database records inserted/updated successfully.")
+                                success = True
+                            else:
+                                logger.error("Failed to insert records into PostgreSQL.")
+                                success = False
+                        else:
+                            logger.warning("No cleaned file found to upload to database.")
+                            success = False
+                    else:
+                        logger.error("Download failed.")
+                        success = False
+                        
+                    # Handle Email for Standalone Executions
+                    try:
+                        notifier = NotifierHelper()
+                        log_content = ""
+                        if os.path.exists(self.logger_helper.log_file):
+                            with open(self.logger_helper.log_file, "r", encoding="utf-8") as f:
+                                log_content = f.read()
+                        notifier.send_status_email(success, log_content)
+                    except Exception as e:
+                        logger.error(f"Email notification failed: {e}")
+
         except Exception as e:
             self.logger_helper.logger.error(f"Automation sequence failed: {e}")
             success = False
-        finally:
-            # Handle email notification
-            try:
-                notifier = NotifierHelper()
-                log_content = ""
-                if os.path.exists(self.logger_helper.log_file):
-                    with open(self.logger_helper.log_file, "r", encoding="utf-8") as f:
-                        log_content = f.read()
-                notifier.send_status_email(success, log_content)
-            except Exception as e:
-                self.logger_helper.logger.error(f"Email notification failed: {e}")
 
+        finally:
             self.is_running = False
             self.root.after(
                 0,
