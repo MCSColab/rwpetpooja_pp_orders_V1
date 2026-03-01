@@ -499,6 +499,8 @@ class PetpoojaGUI:
         self.add_setting_row(scrollable_frame, "DB_NAME", env_data.get("DB_NAME", ""), "env", "Database Name")
         self.add_setting_row(scrollable_frame, "DB_USER", env_data.get("DB_USER", ""), "env", "Database User")
         self.add_setting_row(scrollable_frame, "DB_PASS", env_data.get("DB_PASS", ""), "env", "Database Password")
+        self.add_setting_row(scrollable_frame, "DB_SCHEMA", env_data.get("DB_SCHEMA", "zohoanalytics"), "env", "Database Schema")
+        self.add_setting_row(scrollable_frame, "DB_TABLE", env_data.get("DB_TABLE", "P_orders"), "env", "Database Table")
 
         # 4. GDrive Settings (gdrive/config.txt)
         self.add_section_header(scrollable_frame, "Google Drive (Legacy - gdrive/config.txt)")

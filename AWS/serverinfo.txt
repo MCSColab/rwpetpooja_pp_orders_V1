@@ -1,0 +1,12 @@
+Public IPv4 address
+
+13.234.231.125
+Public IPv6 address
+
+2406:da1a:c58:1a00:36bd:e82d:7571:b852
+Username
+
+admin
+SSH key
+This instance uses the default SSH key for the Mumbai (ap-south-1) Region.
+Download default key --> LightsailDefaultKey-ap-south-1.pem

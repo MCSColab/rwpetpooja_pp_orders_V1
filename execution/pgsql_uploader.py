@@ -25,12 +25,29 @@ class PostgresUploader:
         self.logger_helper = LoggerHelper()
         self.logger = self.logger_helper.logger
         
-        # Database parameters from pgsql.md (can be overridden by .env)
-        self.db_host = os.getenv("DB_HOST", "ls-a0d9d5db2b9ca903f872a3fb74666a139738a39c.cngosk2ksv87.ap-south-1.rds.amazonaws.com")
+        # Database parameters from .env
+        self.db_host = os.getenv("DB_HOST")
         self.db_port = os.getenv("DB_PORT", "5432")
-        self.db_name = os.getenv("DB_NAME", "postgres")
-        self.db_user = os.getenv("DB_USER", "chummuchdb")
-        self.db_pass = os.getenv("DB_PASS", "chummuchdb555")
+        self.db_name = os.getenv("DB_NAME")
+        self.db_user = os.getenv("DB_USER")
+        self.db_pass = os.getenv("DB_PASS")
+        self.db_schema = os.getenv("DB_SCHEMA", "zohoanalytics")
+        self.db_table = os.getenv("DB_TABLE", "P_orders")
+
+        missing_vars = []
+        for var_name, var_value in [
+            ("DB_HOST", self.db_host),
+            ("DB_NAME", self.db_name),
+            ("DB_USER", self.db_user),
+            ("DB_PASS", self.db_pass),
+        ]:
+            if not var_value:
+                missing_vars.append(var_name)
+
+        if missing_vars:
+            err_msg = f"Missing required database environment variables: {', '.join(missing_vars)}"
+            self.logger.error(err_msg)
+            raise ValueError(err_msg)
         
         # Connection string with SSL mode required as per documentation
         self.conn_str = f"postgresql+psycopg2://{self.db_user}:{self.db_pass}@{self.db_host}:{self.db_port}/{self.db_name}?sslmode=require"
@@ -42,11 +59,14 @@ class PostgresUploader:
             self.logger.error(f"Failed to initialize database engine: {e}")
             raise
 
-    def insert_dataframe(self, df: pd.DataFrame, table_name: str = "P_orders", schema: str = "zohoanalytics") -> bool:
+    def insert_dataframe(self, df: pd.DataFrame, table_name: Optional[str] = None, schema: Optional[str] = None) -> bool:
         """
         Inserts a pandas DataFrame into the specified PostgreSQL table.
         Uses an 'upsert' pattern (on conflict do update) based on invoice_no.
         """
+        table_name = table_name or self.db_table
+        schema = schema or self.db_schema
+        
         if df.empty:
             self.logger.warning("Attempted to insert an empty DataFrame.")
             return False
