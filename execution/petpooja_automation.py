@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import os
 import json
 import datetime
@@ -19,9 +19,17 @@ class PetpoojaAutomation:
         self.username = os.getenv("PETPOOJA_USERNAME")
         self.password = os.getenv("PETPOOJA_PASSWORD")
 
-    async def run(self):
-        target_date = self.get_target_date()
-        self.logger.log_execution("INFO", f"Target date for processing: {target_date}")
+    async def run(self, target_date: 'datetime.date | None' = None):
+        """Execute automation for the given date.
+
+        Args:
+            target_date: Date to fetch the Petpooja report for.
+                Defaults to yesterday in IST when not supplied.
+        """
+        if target_date is None:
+            target_date = self.get_target_date()
+        self.logger.log_execution("INFO",
+            f"Target date for processing: {target_date}")
 
         browser = await get_browser()
         try:
@@ -141,8 +149,11 @@ class PetpoojaAutomation:
             await self._cleanup_browser(browser)
 
     def get_target_date(self):
-        """Always return yesterday's date (previous day from system date)."""
-        return datetime.date.today() - datetime.timedelta(days=1)
+        """Return yesterday in IST (UTC+5:30), timezone-safe for UTC servers."""
+        from zoneinfo import ZoneInfo
+        ist = ZoneInfo("Asia/Kolkata")
+        today_ist = datetime.datetime.now(tz=ist).date()
+        return today_ist - datetime.timedelta(days=1)
 
     async def _cleanup_browser(self, browser):
         """Properly cleanup browser resources to avoid unclosed transport warnings."""
