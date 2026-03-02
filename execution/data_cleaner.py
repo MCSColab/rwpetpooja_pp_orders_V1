@@ -36,6 +36,37 @@ class DataCleaner:
             self.settings.get("processed_dir", self.download_dir / "processed")
         )
         self.processed_dir.mkdir(parents=True, exist_ok=True)
+        self._cleanup_processed_files()
+
+    def _cleanup_processed_files(self) -> None:
+        """Remove processed files older than 30 days."""
+        try:
+            thirty_days_ago = datetime.now().timestamp() - (30 * 24 * 60 * 60)
+            removed_count = 0
+            
+            for file_path in self.processed_dir.glob("*"):
+                if file_path.is_file():
+                    if file_path.stat().st_mtime < thirty_days_ago:
+                        file_path.unlink()
+                        removed_count += 1
+            
+            if removed_count > 0:
+                self.logger.info(f"Cleaned up {removed_count} processed files older than 30 days.")
+        except Exception as e:
+            self.logger.error(f"Failed to cleanup processed files: {e}")
+
+    def clear_download_dir(self) -> None:
+        """Forcefully remove any existing XLSX or CSV files from the downloads directory."""
+        try:
+            removed_count = 0
+            for file_path in self.download_dir.glob("*"):
+                if file_path.is_file() and file_path.suffix.lower() in [".csv", ".xlsx"]:
+                    file_path.unlink()
+                    removed_count += 1
+            if removed_count > 0:
+                self.logger.info(f"Purged {removed_count} stale files from downloads directory.")
+        except Exception as e:
+            self.logger.error(f"Failed to clear download directory: {e}")
 
     def _load_settings(self) -> Dict[str, Any]:
         """Load global app settings."""

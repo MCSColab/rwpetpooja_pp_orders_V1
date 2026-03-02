@@ -80,6 +80,10 @@ async def run_pipeline(target_date: datetime.date | None = None) -> bool:
 
     logger.info(f"--- Starting Pipeline for {target_date} ---")
 
+    # Ensure a clean workspace by purging any stale files in downloads
+    cleaner = DataCleaner()
+    cleaner.clear_download_dir()
+
     try:
         # ==========================================
         # 1. Report Extraction: Playwright Headless
