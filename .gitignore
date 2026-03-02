@@ -14,10 +14,10 @@ ENV/
 logs/
 execution/state.json
 
-# Google Drive API Secrets and local state
-gdrive/token.json
-gdrive/client_secret*.json
-gdrive/uploaded_files.json
+# Infrastructure & Tools
+AWS/
+.claude/
+screenshots/
 
 # IDEs
 .vscode/
@@ -26,5 +26,4 @@ gdrive/uploaded_files.json
 
 # Local Settings
 settings.json
-gdrive/config.txt
 cookies.json

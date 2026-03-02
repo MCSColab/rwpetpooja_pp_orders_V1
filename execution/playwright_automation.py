@@ -50,9 +50,6 @@ class PlaywrightAutomation:
         self.profile_dir = Path(self.settings.get("playwright_profile_dir", ".tmp/playwright_profile"))
         self.profile_dir.mkdir(parents=True, exist_ok=True)
 
-        self.screenshot_dir = Path("screenshots")
-        self.screenshot_dir.mkdir(parents=True, exist_ok=True)
-
     async def run(self, target_date: Optional[datetime.date] = None) -> Optional[Path]:
         """
         Execute the full Playwright fallback pipeline.
@@ -197,11 +194,6 @@ class PlaywrightAutomation:
                         pass
                         
             page.on("response", handle_response)
-
-            # Capture screenshot of the reports page before date selection
-            screenshot_path = self.screenshot_dir / f"reports_page_{target_date}_{datetime.datetime.now().strftime('%H%M%S')}.png"
-            await page.screenshot(path=str(screenshot_path))
-            self.logger.info(f"[FALLBACK] Screenshot saved to {screenshot_path}")
 
             # Attempt robust Javascript date injection covering any date input
             js_date_injector = f"""
