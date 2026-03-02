@@ -50,7 +50,8 @@ class PlaywrightAutomation:
         self.profile_dir = Path(self.settings.get("playwright_profile_dir", ".tmp/playwright_profile"))
         self.profile_dir.mkdir(parents=True, exist_ok=True)
 
-        self.cookie_file = Path(self.settings.get("cookie_file", "cookies.json"))
+        self.screenshot_dir = Path("screenshots")
+        self.screenshot_dir.mkdir(parents=True, exist_ok=True)
 
     async def run(self, target_date: Optional[datetime.date] = None) -> Optional[Path]:
         """
@@ -90,11 +91,7 @@ class PlaywrightAutomation:
                 if not logged_in:
                     self.logger.error("[FALLBACK] Failed to authenticate.")
                     return None
-
-                # 2. Export Cookies to repair the fast route
-                await self._export_cookies_to_json(context)
-
-                # 3. Export Report
+                # 2. Export Report
                 report_url = await self._trigger_and_get_download_link(page, target_date)
                 if not report_url:
                     self.logger.error(f"[FALLBACK] Failed to extract download link for {target_date}")
@@ -168,24 +165,7 @@ class PlaywrightAutomation:
             self.logger.error(f"[FALLBACK] Automated UI login failed: {e}")
             return False
 
-    async def _export_cookies_to_json(self, context: BrowserContext) -> None:
-        """
-        Extract billing.petpooja.com cookies and save to cookies.json.
-        """
-        try:
-            cookies = await context.cookies("https://billing.petpooja.com")
-            cookie_dict = {c["name"]: c["value"] for c in cookies}
 
-            if not cookie_dict:
-                self.logger.warning("[FALLBACK] No cookies found for petpooja.com")
-                return
-
-            with open(self.cookie_file, "w", encoding="utf-8") as f:
-                json.dump(cookie_dict, f, indent=2)
-
-            self.logger.info(f"[FALLBACK] Extracted and saved {len(cookie_dict)} cookies to {self.cookie_file.name}. Fast route repaired.")
-        except Exception as e:
-            self.logger.error(f"[FALLBACK] Failed to export cookies: {e}")
 
     async def _trigger_and_get_download_link(self, page: Page, target_date: datetime.date) -> Optional[str]:
         """
@@ -218,13 +198,47 @@ class PlaywrightAutomation:
                         
             page.on("response", handle_response)
 
-            # 2. Fill dates using JS (since they are datepickers)
-            await page.evaluate(f'document.querySelector("#from_date").value = "{date_str}";')
-            await page.evaluate(f'document.querySelector("#to_date").value = "{date_str}";')
+            # Capture screenshot of the reports page before date selection
+            screenshot_path = self.screenshot_dir / f"reports_page_{target_date}_{datetime.datetime.now().strftime('%H%M%S')}.png"
+            await page.screenshot(path=str(screenshot_path))
+            self.logger.info(f"[FALLBACK] Screenshot saved to {screenshot_path}")
+
+            # Attempt robust Javascript date injection covering any date input
+            js_date_injector = f"""
+            (() => {{
+                const inputs = document.querySelectorAll('input');
+                let found = 0;
+                inputs.forEach(i => {{
+                    if (i.value && i.value.match(/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/)) {{
+                        i.value = "{date_str}";
+                        i.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        i.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        found++;
+                    }}
+                }});
+                
+                // Fallback targeted attempts in case they are empty
+                const fromInput = document.querySelector('input[name="from_date"]') || document.querySelector('#from_date');
+                const toInput = document.querySelector('input[name="to_date"]') || document.querySelector('#to_date');
+                if (fromInput) {{ fromInput.value = "{date_str}"; fromInput.dispatchEvent(new Event('change', {{bubbles:true}})); found++; }}
+                if (toInput) {{ toInput.value = "{date_str}"; toInput.dispatchEvent(new Event('change', {{bubbles:true}})); found++; }}
+                
+                return found;
+            }})()
+            """
+            
+            try:
+                # Give page a moment to render components
+                await asyncio.sleep(2)  
+                affected_inputs = await page.evaluate(js_date_injector)
+                self.logger.info(f"[FALLBACK] JS injected date into {affected_inputs} inputs.")
+            except Exception as wait_err:
+                self.logger.warning(f"[FALLBACK] Could not set dates via JS: {wait_err}")
 
             # 3. Click Export
-            export_btn = page.locator("#order_searc1h, button:has-text('Export')").first
-            await export_btn.click()
+            export_btn = page.locator("#order_search, button:has-text('Export'), a:has-text('Export')").first
+            await export_btn.scroll_into_view_if_needed()
+            await export_btn.click(force=True)
             self.logger.info("[FALLBACK] Clicked Export button.")
 
             # 4. Wait for the response handler to catch the URL

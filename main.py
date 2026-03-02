@@ -1,14 +1,11 @@
 """
 Central Application Entry Point.
 
-Orchestrates the Petpooja to PostgreSQL automation pipeline with a robust
-Fallback architecture:
-    1. Primary Route: Fast, low-RAM requests-based API client.
-    2. Fallback Route: If API fails (e.g., expired cookies), launches
-       Playwright headless Firefox to log in, export new cookies, and download.
-    3. Cleaning: Processes the downloaded CSV.
-    4. Database: Upserts records into PostgreSQL.
-    5. Notifications: Sends an email summarizing success or failure.
+Orchestrates the Petpooja to PostgreSQL automation pipeline using a
+strictly headless Playwright architecture:
+    1. Extraction: Launches persistent Playwright headless Firefox to download report.
+    2. Cleaning: Processes the downloaded CSV.
+    3. Database: Upserts records into PostgreSQL.
 
 Date Resolution Strategy
 ------------------------
@@ -32,11 +29,9 @@ from zoneinfo import ZoneInfo  # stdlib since Python 3.9
 
 import pandas as pd
 
-from execution.petpooja_requests import PetpoojaRequestsClient
 from execution.playwright_automation import PlaywrightAutomation
 from execution.data_cleaner import DataCleaner
 from execution.pgsql_uploader import PostgresUploader
-from execution.notifier_helper import NotifierHelper
 from execution.logger_helper import LoggerHelper
 
 # India Standard Time — used for all "today / yesterday" calculations so that
@@ -58,7 +53,7 @@ def _yesterday_ist() -> datetime.date:
 
 
 async def run_pipeline(target_date: datetime.date | None = None) -> bool:
-    """Execute the dual-route automation pipeline for a single date.
+    """Execute the automation pipeline for a single date.
 
     Args:
         target_date: The specific date for which to fetch and upload Petpooja
@@ -66,12 +61,11 @@ async def run_pipeline(target_date: datetime.date | None = None) -> bool:
             pipeline is timezone-safe on UTC servers.
 
     Returns:
-        bool: ``True`` if the full pipeline (download → clean → upload → notify)
+        bool: ``True`` if the full pipeline (download → clean → upload)
             completed without errors, ``False`` otherwise.
     """
     logger_helper = LoggerHelper()
     logger = logger_helper.logger
-    notifier = NotifierHelper()
 
     success = False
     downloaded_csv = None
@@ -88,30 +82,17 @@ async def run_pipeline(target_date: datetime.date | None = None) -> bool:
 
     try:
         # ==========================================
-        # 1. Primary Route: Requests API (Fast Path)
+        # 1. Report Extraction: Playwright Headless
         # ==========================================
-        logger.info("Attempting Fast Route (requests API)...")
-        try:
-            req_client = PetpoojaRequestsClient()
-            downloaded_csv = req_client.run(target_date)
-            if downloaded_csv:
-                logger.info("Fast Route Success.")
-        except Exception as e:
-            logger.warning(f"Fast Route encountered an error during init: {e}")
-
-        # ==========================================
-        # 2. Fallback Route: Playwright Automation
-        # ==========================================
-        if not downloaded_csv:
-            logger.warning("Fast Route failed. Initiating Playwright Fallback Route...")
-            pw_bot = PlaywrightAutomation()
-            downloaded_csv = await pw_bot.run(target_date)
-            
-            if downloaded_csv:
-                logger.info("Fallback Route Success.")
-            else:
-                logger.error("Both Fast Route and Fallback Route failed to download the report.")
-                raise RuntimeError("Report download failed on all routes.")
+        logger.info("Initiating Playwright Headless extraction...")
+        pw_bot = PlaywrightAutomation()
+        downloaded_csv = await pw_bot.run(target_date)
+        
+        if downloaded_csv:
+            logger.info("Playwright extraction completed successfully.")
+        else:
+            logger.error("Playwright failed to download the report.")
+            raise RuntimeError("Report download failed.")
 
         # ==========================================
         # 3. Data Cleaning
@@ -144,23 +125,6 @@ async def run_pipeline(target_date: datetime.date | None = None) -> bool:
         success = False
 
     finally:
-        # ==========================================
-        # 5. Email Notification
-        # ==========================================
-        logger.info("Generating status email...")
-        log_content = ""
-        try:
-            if os.path.exists(logger_helper.log_file):
-                # Read the last 100 lines of the log for context
-                with open(logger_helper.log_file, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-                    log_content = "".join(lines[-100:])
-        except Exception as log_err:
-            logger.error(f"Could not read log file for email: {log_err}")
-
-        # Send email
-        notifier.send_status_email(success, log_content)
-        
         if success:
             logger.info("--- Pipeline Completed Successfully ---")
         else:

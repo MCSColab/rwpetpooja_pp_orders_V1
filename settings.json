@@ -1,7 +1,7 @@
 {
     "download_dir": "c:/Work/RippleWalk/UC1petpooja/.tmp/downloads",
     "processed_dir": "c:/Work/RippleWalk/UC1petpooja/.tmp/downloads/processed",
-    "browser_profile_dir": "c:/Work/RippleWalk/UC1petpooja/.tmp/browser_profile",
+    "playwright_profile_dir": "c:/Work/RippleWalk/UC1petpooja/.tmp/playwright_profile",
     "petpooja_url": "https://billing.petpooja.com/reports/order_summary_ho",
     "login_url": "https://billing.petpooja.com/",
     "email_enabled": true,

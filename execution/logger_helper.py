@@ -38,7 +38,28 @@ class LoggerHelper:
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         self._init_state()
+        self._cleanup_old_logs()
         self._setup_logging()
+
+    def _cleanup_old_logs(self) -> None:
+        """Remove redundant and 30+ day old logs."""
+        try:
+            thirty_days_ago = datetime.datetime.now() - datetime.timedelta(days=30)
+            
+            for log_file in self.log_dir.glob("*"):
+                # Always remove 'run_log_*.log' as it's the old format
+                if log_file.name.startswith("run_log_"):
+                    log_file.unlink()
+                    continue
+
+                # Remove regular log files if older than 30 days
+                if log_file.is_file():
+                    mtime = datetime.datetime.fromtimestamp(log_file.stat().st_mtime)
+                    if mtime < thirty_days_ago:
+                        log_file.unlink()
+        except Exception as e:
+            # We don't want a cleanup failure to crash the whole app
+            print(f"Warning: Log cleanup failed: {e}")
 
     def _setup_logging(self) -> None:
         """Configure project-wide logging to a daily rotating file and console."""

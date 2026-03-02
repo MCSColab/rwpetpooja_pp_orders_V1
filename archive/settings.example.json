@@ -1,7 +1,7 @@
 {
     "download_dir": "./.tmp/downloads",
     "processed_dir": "./.tmp/downloads/processed",
-    "browser_profile_dir": "./.tmp/browser_profile",
+    "playwright_profile_dir": "./.tmp/playwright_profile",
     "petpooja_url": "https://billing.petpooja.com/reports/order_summary_ho",
     "login_url": "https://billing.petpooja.com/",
     "email_enabled": true,
