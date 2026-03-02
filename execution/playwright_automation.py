@@ -50,6 +50,9 @@ class PlaywrightAutomation:
         self.profile_dir = Path(self.settings.get("playwright_profile_dir", ".tmp/playwright_profile"))
         self.profile_dir.mkdir(parents=True, exist_ok=True)
 
+        self.logs_dir = Path("logs")
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+
     async def run(self, target_date: Optional[datetime.date] = None) -> Optional[Path]:
         """
         Execute the full Playwright fallback pipeline.
@@ -106,8 +109,38 @@ class PlaywrightAutomation:
                     self.logger.error("[FALLBACK] File download failed or resulted in 0 bytes.")
                     return None
 
+            except Exception as outer_e:
+                self.logger.error(f"[FALLBACK] Unhandled exception in Playwright execution: {outer_e}")
+                # We attempt to capture the error state if page was instantiated
+                if 'page' in locals() and page:
+                    await self._capture_error_state(page, target_date)
+                return None
+
             finally:
                 await context.close()
+
+    async def _capture_error_state(self, page: Page, target_date: datetime.date) -> None:
+        """
+        Capture a screenshot and the HTML source of the current page for debugging.
+        Saves files to the logs directory.
+        """
+        try:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            base_name = f"error_{target_date}_{timestamp}"
+            
+            # 1. Take Screenshot
+            screenshot_path = self.logs_dir / f"{base_name}.png"
+            await page.screenshot(path=str(screenshot_path), full_page=True)
+            self.logger.info(f"[FALLBACK] Error screenshot saved to {screenshot_path}")
+            
+            # 2. Save HTML Source
+            html_content = await page.content()
+            html_path = self.logs_dir / f"{base_name}.html"
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            self.logger.info(f"[FALLBACK] Error HTML source saved to {html_path}")
+        except Exception as e:
+            self.logger.error(f"[FALLBACK] Failed to capture error state: {e}")
 
     async def _ensure_logged_in(self, page: Page) -> bool:
         """
@@ -272,6 +305,7 @@ class PlaywrightAutomation:
             
         except Exception as e:
             self.logger.error(f"[FALLBACK] Error during export trigger: {e}")
+            await self._capture_error_state(page, target_date)
             return None
 
 

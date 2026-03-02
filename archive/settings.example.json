@@ -3,26 +3,11 @@
     "processed_dir": "./.tmp/downloads/processed",
     "playwright_profile_dir": "./.tmp/playwright_profile",
     "petpooja_url": "https://billing.petpooja.com/reports/order_summary_ho",
-    "login_url": "https://billing.petpooja.com/",
-    "email_enabled": true,
-    "smtp_host": "smtp.gmail.com",
-    "smtp_port": 587,
-    "smtp_user": "your_email@gmail.com",
-    "smtp_pass": "your_app_password",
-    "email_receivers": [
-        "receiver@example.com"
-    ],
-    "scheduler": {
-        "enabled": false,
-        "days": [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday"
-        ],
-        "time": "09:00"
-    }
+    "db_host": "your-db-instance.xxxxxx.region.rds.amazonaws.com",
+    "db_port": "5432",
+    "db_name": "your_db_name",
+    "db_user": "your_db_user",
+    "db_pass": "your_db_pass",
+    "db_schema": "zohoanalytics",
+    "db_table": "P_orders"
 }

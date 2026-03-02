@@ -1,28 +1,13 @@
 {
-    "download_dir": "c:/Work/RippleWalk/UC1petpooja/.tmp/downloads",
-    "processed_dir": "c:/Work/RippleWalk/UC1petpooja/.tmp/downloads/processed",
-    "playwright_profile_dir": "c:/Work/RippleWalk/UC1petpooja/.tmp/playwright_profile",
+    "download_dir": "./.tmp/downloads",
+    "processed_dir": "./.tmp/downloads/processed",
+    "playwright_profile_dir": "./.tmp/playwright_profile",
     "petpooja_url": "https://billing.petpooja.com/reports/order_summary_ho",
-    "login_url": "https://billing.petpooja.com/",
-    "email_enabled": true,
-    "smtp_host": "smtp.gmail.com",
-    "smtp_port": 587,
-    "smtp_user": "chummuch@pinkadrakft.com",
-    "smtp_pass": "ihso migk ylsv wrxo",
-    "email_receivers": [
-        "chummuch@pinkadrakft.com"
-    ],
-    "scheduler": {
-        "enabled": true,
-        "days": [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday"
-        ],
-        "time": "22:17"
-    }
+    "db_host": "ls-a0d9d5db2b9ca903f872a3fb74666a139738a39c.cngosk2ksv87.ap-south-1.rds.amazonaws.com",
+    "db_port": "5432",
+    "db_name": "postgres",
+    "db_user": "chummuchdb",
+    "db_pass": "chummuchdb555",
+    "db_schema": "zohoanalytics",
+    "db_table": "P_orders"
 }

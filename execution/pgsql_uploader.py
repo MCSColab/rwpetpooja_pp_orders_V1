@@ -25,14 +25,20 @@ class PostgresUploader:
         self.logger_helper = LoggerHelper()
         self.logger = self.logger_helper.logger
         
-        # Database parameters from .env
-        self.db_host = os.getenv("DB_HOST")
-        self.db_port = os.getenv("DB_PORT", "5432")
-        self.db_name = os.getenv("DB_NAME")
-        self.db_user = os.getenv("DB_USER")
-        self.db_pass = os.getenv("DB_PASS")
-        self.db_schema = os.getenv("DB_SCHEMA", "zohoanalytics")
-        self.db_table = os.getenv("DB_TABLE", "P_orders")
+        # Load settings
+        self.settings = {}
+        if os.path.exists(settings_path):
+            with open(settings_path, "r", encoding="utf-8") as f:
+                self.settings = json.load(f)
+        
+        # Database parameters: Environment -> settings.json -> Hardcoded Defaults
+        self.db_host = os.getenv("DB_HOST", self.settings.get("db_host"))
+        self.db_port = os.getenv("DB_PORT", self.settings.get("db_port", "5432"))
+        self.db_name = os.getenv("DB_NAME", self.settings.get("db_name"))
+        self.db_user = os.getenv("DB_USER", self.settings.get("db_user"))
+        self.db_pass = os.getenv("DB_PASS", self.settings.get("db_pass"))
+        self.db_schema = os.getenv("DB_SCHEMA", self.settings.get("db_schema", "zohoanalytics"))
+        self.db_table = os.getenv("DB_TABLE", self.settings.get("db_table", "P_orders"))
 
         missing_vars = []
         for var_name, var_value in [
