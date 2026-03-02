@@ -18,6 +18,8 @@ execution/state.json
 AWS/
 .claude/
 screenshots/
+AGENT.md
+GEMINI.md
 
 # IDEs
 .vscode/
