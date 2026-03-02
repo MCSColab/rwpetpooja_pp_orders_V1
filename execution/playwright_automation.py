@@ -301,6 +301,8 @@ class PlaywrightAutomation:
                     return dom_url
                 await asyncio.sleep(1)
 
+            self.logger.warning("[FALLBACK] Network interception and DOM parsing both timed out. No download link found.")
+            await self._capture_error_state(page, target_date)
             return None
             
         except Exception as e:
