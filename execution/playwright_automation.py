@@ -104,6 +104,8 @@ class PlaywrightAutomation:
 
                 if success and target_path.exists() and target_path.stat().st_size > 0:
                     self.logger.info(f"[FALLBACK] Download completed successfully: {target_path.name}")
+                    # 5. Clear Report on Petpooja
+                    await self._clear_report_for_date(page, target_date)
                     return target_path
                 else:
                     self.logger.error("[FALLBACK] File download failed or resulted in 0 bytes.")
@@ -118,6 +120,51 @@ class PlaywrightAutomation:
 
             finally:
                 await context.close()
+
+    async def _clear_report_for_date(self, page: Page, target_date: datetime.date) -> None:
+        """
+        Locate the 'Clear' button for the target date in the reports table and click it.
+        """
+        date_str = target_date.strftime("%Y-%m-%d")
+        date_range = f"{date_str} to {date_str}"
+        
+        self.logger.info(f"[FALLBACK] Attempting to click 'Clear' button for {date_range}")
+        
+        try:
+            # JavaScript to find the row by date and click the clear button
+            js_clear_script = f"""
+            (() => {{
+                const rows = document.querySelectorAll('#reports_data tr');
+                for (const row of rows) {{
+                    const dateCell = row.querySelector('td:first-child');
+                    if (dateCell && dateCell.textContent.trim().includes("{date_range}")) {{
+                        const clearBtn = row.querySelector('input.clear_report[value="Clear"]');
+                        if (clearBtn) {{
+                            clearBtn.click();
+                            return true;
+                        }}
+                    }}
+                }}
+                return false;
+            }})()
+            """
+            
+            # We try for a few seconds as the row might take a moment to appear/update
+            clicked = False
+            for _ in range(5):
+                clicked = await page.evaluate(js_clear_script)
+                if clicked:
+                    self.logger.info(f"[FALLBACK] Successfully clicked 'Clear' for {date_range}")
+                    # Brief wait for any potential alert or UI change
+                    await asyncio.sleep(2)
+                    break
+                await asyncio.sleep(1)
+            
+            if not clicked:
+                self.logger.warning(f"[FALLBACK] Could not find 'Clear' button for {date_range} in the table.")
+                
+        except Exception as e:
+            self.logger.error(f"[FALLBACK] Error while clicking 'Clear' button: {e}")
 
     async def _capture_error_state(self, page: Page, target_date: datetime.date) -> None:
         """

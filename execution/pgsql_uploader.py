@@ -74,8 +74,8 @@ class PostgresUploader:
         schema = schema or self.db_schema
         
         if df.empty:
-            self.logger.warning("Attempted to insert an empty DataFrame.")
-            return False
+            self.logger.info("No records to insert (DataFrame is empty).")
+            return True
 
         # --- Sanitization & Type Conversion (Section 4.3 of pgsql.md) ---
         df = df.copy()
