@@ -91,6 +91,11 @@ class PostgresUploader:
             except Exception as e:
                 self.logger.warning(f"Note: Date conversion issue: {e}")
 
+        # Fix invoice_no Type: P_orders.invoice_no is TEXT, but pandas may
+        # infer it as int64/bigint, causing "operator does not exist: text = bigint".
+        if 'invoice_no' in df.columns:
+            df['invoice_no'] = df['invoice_no'].astype(str)
+
         self.logger.info(f"Preparing to insert {len(df)} records into {schema}.{table_name}...")
 
         try:
