@@ -104,8 +104,10 @@ class PostgresUploader:
                 # 2. Upload data to the temporary table
                 df.to_sql("temp_orders", conn, if_exists="append", index=False)
                 
-                # 3. Perform the UPSERT with explicit casting for the DATE type
-                # This fixes the (psycopg2.errors.DatatypeMismatch) error
+                # 3. Perform the UPSERT via DELETE + INSERT.
+                # This avoids relying on a unique constraint for ON CONFLICT,
+                # which was causing psycopg2.errors.InvalidColumnReference errors
+                # when the constraint was not committed to the DB.
                 target_cols = []
                 select_cols = []
                 for col in df.columns:
@@ -118,16 +120,19 @@ class PostgresUploader:
 
                 cols_str = ", ".join(target_cols)
                 select_str = ", ".join(select_cols)
-                update_stmt = ", ".join([f"{col} = EXCLUDED.{col}" for col in target_cols if col != "invoice_no"])
-                
-                upsert_query = f"""
-                    INSERT INTO {schema}."{table_name}" ({cols_str})
-                    SELECT {select_str} FROM temp_orders
-                    ON CONFLICT (invoice_no) 
-                    DO UPDATE SET {update_stmt};
+
+                # Delete existing rows that match any incoming invoice_no, then insert fresh.
+                delete_query = f"""
+                    DELETE FROM {schema}."{table_name}"
+                    WHERE invoice_no IN (SELECT invoice_no FROM temp_orders);
                 """
-                
-                conn.execute(text(upsert_query))
+                insert_query = f"""
+                    INSERT INTO {schema}."{table_name}" ({cols_str})
+                    SELECT {select_str} FROM temp_orders;
+                """
+
+                conn.execute(text(delete_query))
+                conn.execute(text(insert_query))
                 conn.execute(text("DROP TABLE temp_orders;"))
                 
                 self.logger.info(f"Successfully upserted {len(df)} records into {schema}.{table_name}.")

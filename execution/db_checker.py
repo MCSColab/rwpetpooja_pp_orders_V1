@@ -6,7 +6,12 @@ Queries the PostgreSQL database to identify missing dates in the Petpooja report
 
 import os
 import datetime
+import sys
 from sqlalchemy import text
+
+# Add current directory to path to allow running from root
+sys.path.append(os.getcwd())
+
 from execution.pgsql_uploader import PostgresUploader
 from execution.logger_helper import LoggerHelper
 
@@ -15,7 +20,7 @@ def get_missing_dates(start_date: datetime.date, end_date: datetime.date):
     uploader = PostgresUploader()
     logger = LoggerHelper().logger
 
-    query = text(f"SELECT DISTINCT date FROM {uploader.db_schema}.{uploader.db_table} WHERE date BETWEEN :start AND :end ORDER BY date ASC")
+    query = text(f'SELECT DISTINCT date FROM {uploader.db_schema}."{uploader.db_table}" WHERE date BETWEEN :start AND :end ORDER BY date ASC')
     
     try:
         with uploader.engine.connect() as conn:
