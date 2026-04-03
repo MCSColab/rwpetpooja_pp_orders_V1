@@ -3,11 +3,11 @@
     "processed_dir": "./.tmp/downloads/processed",
     "playwright_profile_dir": "./.tmp/playwright_profile",
     "petpooja_url": "https://billing.petpooja.com/reports/order_summary_ho",
-    "db_host": "your-db-instance.xxxxxx.region.rds.amazonaws.com",
+    "db_host": "ls-a0d9d5db2b9ca903f872a3fb74666a139738a39c.cngosk2ksv87.ap-south-1.rds.amazonaws.com",
     "db_port": "5432",
-    "db_name": "your_db_name",
-    "db_user": "your_db_user",
-    "db_pass": "your_db_pass",
+    "db_name": "Chummuch-DB",
+    "db_user": "chummuchdb",
+    "db_pass": "chummuchdb555",
     "db_schema": "zohoanalytics",
     "db_table": "P_orders"
 }

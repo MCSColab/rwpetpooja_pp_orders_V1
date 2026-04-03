@@ -78,30 +78,38 @@ class PostgresUploader:
             return True
 
         # --- Sanitization & Type Conversion (Section 4.3 of pgsql.md) ---
+        # Note: We NO LONGER lowercase column names here because the DB table pp_orders
+        # uses CamelCase headers (e.g., Invoice_No) which require double-quoting.
+        # Mapping should happen in the DataCleaner to ensure columns match DB exactly.
         df = df.copy()
-        df.columns = [
-            col.lower().strip().replace(" ", "_").replace("#", "").replace("%", "").replace("&", "")
-            for col in df.columns
-        ]
 
         # Fix Date Type: Ensure it's a date object to help SQL inference
-        if 'date' in df.columns:
+        # The DB column is named "Date".
+        if 'Date' in df.columns:
             try:
-                df['date'] = pd.to_datetime(df['date']).dt.date
+                df['Date'] = pd.to_datetime(df['Date']).dt.date
             except Exception as e:
                 self.logger.warning(f"Note: Date conversion issue: {e}")
+        elif 'date' in df.columns:
+             # Fallback for lowercase 'date' if not already cleaned
+             try:
+                df['date'] = pd.to_datetime(df['date']).dt.date
+             except Exception:
+                 pass
 
-        # Fix invoice_no Type: P_orders.invoice_no is TEXT, but pandas may
-        # infer it as int64/bigint, causing "operator does not exist: text = bigint".
-        if 'invoice_no' in df.columns:
-            df['invoice_no'] = df['invoice_no'].astype(str)
+        # Fix Invoice_No Type: P_orders.Invoice_No is TEXT
+        # Ensure it's treated as string to avoid operator mismatch errors.
+        if 'Invoice_No' in df.columns:
+            df['Invoice_No'] = df['Invoice_No'].astype(str)
+        elif 'invoice_no' in df.columns:
+             df['invoice_no'] = df['invoice_no'].astype(str)
 
         self.logger.info(f"Preparing to insert {len(df)} records into {schema}.{table_name}...")
 
         try:
             with self.engine.begin() as conn:
                 # Ensure schema exists
-                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema};"))
+                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}";'))
                 
                 # 1. Create a temporary table
                 df.head(0).to_sql("temp_orders", conn, if_exists="replace", index=False)
@@ -113,26 +121,30 @@ class PostgresUploader:
                 # This avoids relying on a unique constraint for ON CONFLICT,
                 # which was causing psycopg2.errors.InvalidColumnReference errors
                 # when the constraint was not committed to the DB.
-                target_cols = []
+                # Build quoted column names for safe SQL execution
+                target_cols = [f'"{col}"' for col in df.columns]
+                
+                # Handle specific transformations in the SELECT (e.g., Date vs CAST(Date AS DATE))
                 select_cols = []
                 for col in df.columns:
-                    target_cols.append(col)
-                    if col == 'date':
-                        # Force cast the value from temp_orders (which might be seen as text) to DATE
-                        select_cols.append("CAST(date AS DATE)")
+                    if col.lower() == 'date':
+                        select_cols.append(f'CAST("{col}" AS DATE)')
                     else:
-                        select_cols.append(col)
+                        select_cols.append(f'"{col}"')
 
                 cols_str = ", ".join(target_cols)
                 select_str = ", ".join(select_cols)
+                
+                # Resolve the ID column for conflict check (Invoice_No)
+                conflict_col = "Invoice_No" if "Invoice_No" in df.columns else "invoice_no"
 
-                # Delete existing rows that match any incoming invoice_no, then insert fresh.
+                # Delete existing rows that match any incoming Invoice_No, then insert fresh.
                 delete_query = f"""
-                    DELETE FROM {schema}."{table_name}"
-                    WHERE invoice_no IN (SELECT invoice_no FROM temp_orders);
+                    DELETE FROM "{schema}"."{table_name}"
+                    WHERE "{conflict_col}" IN (SELECT "{conflict_col}" FROM temp_orders);
                 """
                 insert_query = f"""
-                    INSERT INTO {schema}."{table_name}" ({cols_str})
+                    INSERT INTO "{schema}"."{table_name}" ({cols_str})
                     SELECT {select_str} FROM temp_orders;
                 """
 

@@ -3,7 +3,7 @@ Central Application Entry Point.
 
 Orchestrates the Petpooja to PostgreSQL automation pipeline using a
 strictly headless Playwright architecture:
-    1. Extraction: Launches persistent Playwright headless Firefox to download report.
+    1. Extraction: Launches persistent Playwright headless Firefox (reusing session from archive/.tmp/playwright_profile).
     2. Cleaning: Processes the downloaded CSV.
     3. Database: Upserts records into PostgreSQL.
 
@@ -52,7 +52,7 @@ def _yesterday_ist() -> datetime.date:
     return today_ist - datetime.timedelta(days=1)
 
 
-async def run_pipeline(target_date: datetime.date | None = None) -> bool:
+async def run_pipeline(target_date: datetime.date | None = None, headless: bool = True) -> bool:
     """Execute the automation pipeline for a single date.
 
     Args:
@@ -88,8 +88,8 @@ async def run_pipeline(target_date: datetime.date | None = None) -> bool:
         # ==========================================
         # 1. Report Extraction: Playwright Headless
         # ==========================================
-        logger.info("Initiating Playwright Headless extraction...")
-        pw_bot = PlaywrightAutomation()
+        logger.info(f"Initiating Playwright {'Headless' if headless else 'Visible'} extraction...")
+        pw_bot = PlaywrightAutomation(headless=headless)
         downloaded_csv = await pw_bot.run(target_date)
         
         if downloaded_csv:
@@ -177,6 +177,13 @@ def main() -> None:
         metavar="YYYY-MM-DD",
         help="End of a date range (inclusive). Must be paired with --start.",
     )
+    parser.add_argument(
+        "--visible",
+        action="store_false",
+        dest="headless",
+        default=True,
+        help="Run the browser in visible mode (default: headless).",
+    )
     args = parser.parse_args()
 
     # ── Resolve the list of dates to process ─────────────────────────────────
@@ -221,8 +228,8 @@ def main() -> None:
     overall_success = True
     try:
         for run_date in dates_to_run:
-            print(f"\n>>> Running pipeline for {run_date} ...")
-            success = asyncio.run(run_pipeline(run_date))
+            print(f"\n>>> Running pipeline for {run_date} (Headless={args.headless}) ...")
+            success = asyncio.run(run_pipeline(run_date, headless=args.headless))
             if not success:
                 overall_success = False
                 print(f"!!! Pipeline FAILED for {run_date}")

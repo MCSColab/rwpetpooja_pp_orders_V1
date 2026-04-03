@@ -162,123 +162,130 @@ class DataCleaner:
 
     def _transform_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Apply transformation logic to the dataframe.
+        Apply transformation logic to the dataframe to match the 42-column
+        CamelCase database schema.
 
         Args:
-            df: Original dataframe.
+            df: Original dataframe from Petpooja report.
 
         Returns:
-            Transformed dataframe.
+            Transformed dataframe with calculated metrics and mapped headers.
         """
-        # Create a copy to avoid SettingWithCopyWarning
+        self.logger.info("Initializing Data Transformation & Business Logic...")
         df = df.copy()
 
-        # --- A. Column Normalization ---
+        # 1. Column Normalization (Pre-Mapping)
         if "order_type" in df.columns:
-            print(
-                f"[{datetime.now().strftime('%H:%M:%S')}] Step 2a: Normalizing order types..."
-            )
-            # Update "Delivery(Parcel)" or "Delivery (Parcel)" to exactly "Delivery"
-            mask = df["order_type"].str.contains(
-                r"Delivery\s?\(Parcel\)", case=False, na=False
-            )
+            mask = df["order_type"].str.contains(r"Delivery\s?\(Parcel\)", case=False, na=False)
             df.loc[mask, "order_type"] = "Delivery"
 
-        # --- B. Record Filtering ---
+        # 2. Filtering
         if "status" in df.columns:
-            print(
-                f"[{datetime.now().strftime('%H:%M:%S')}] Step 2b: Filtering cancelled/complimentary and staff records..."
-            )
-            # Delete rows where status is "Cancelled" or "Complimentary"
             df = df[~df["status"].str.lower().isin(["cancelled", "complimentary"])]
-
-            # Remove Staff: Delete all rows where any key column contains "Staff"
-            cols_to_check = ["status", "order_type", "sub_order_type"]
-            for col in cols_to_check:
+            for col in ["status", "order_type", "sub_order_type"]:
                 if col in df.columns:
                     df = df[df[col].astype(str).str.lower() != "staff"]
 
-        # --- C. Platform Standardization ---
+        # 3. Platform Standardization
         if "sub_order_type" in df.columns:
-            print(
-                f"[{datetime.now().strftime('%H:%M:%S')}] Step 2c: Standardizing platforms (Swiggy, Zomato, App)..."
-            )
-            # Standardize Swiggy
-            swiggy_mask = df["sub_order_type"].str.contains(
-                "Swiggy", case=False, na=False
-            )
-            df.loc[swiggy_mask, "sub_order_type"] = "Swiggy"
+            df.loc[df["sub_order_type"].str.contains("Swiggy", case=False, na=False), "sub_order_type"] = "Swiggy"
+            df.loc[df["sub_order_type"].str.contains("Zomato", case=False, na=False), "sub_order_type"] = "Zomato"
+            df.loc[df["sub_order_type"].str.contains("Fudr Online", case=False, na=False), "sub_order_type"] = "App"
+            
+            # Map App to Delivery if order_type is Delivery
+            if "order_type" in df.columns:
+                mask = (df["sub_order_type"] == "App") & (df["order_type"] == "Delivery")
+                df.loc[mask, "sub_order_type"] = "Delivery"
 
-            # Standardize Zomato
-            zomato_mask = df["sub_order_type"].str.contains(
-                "Zomato", case=False, na=False
-            )
-            df.loc[zomato_mask, "sub_order_type"] = "Zomato"
+                # Map unknown to order_type
+                known = ["Swiggy", "Zomato", "Delivery", "App", "Dine In", "Takeaway"]
+                b2b_mask = ~df["sub_order_type"].isin(known)
+                df.loc[b2b_mask, "sub_order_type"] = df.loc[b2b_mask, "order_type"]
 
-            # Standardize FUDR Online
-            fudr_mask = df["sub_order_type"].str.contains(
-                "Fudr Online", case=False, na=False
-            )
-            df.loc[fudr_mask, "sub_order_type"] = "FUDR Online"
-
-            # Map App: Change "FUDR Online" to "App"
-            df.loc[df["sub_order_type"] == "FUDR Online", "sub_order_type"] = "App"
-
-        # --- D. Conditional Logic ---
-        if "sub_order_type" in df.columns and "order_type" in df.columns:
-            # If sub_order_type is "App" AND order_type is "Delivery", change sub_order_type to "Delivery"
-            app_delivery_mask = (df["sub_order_type"] == "App") & (
-                df["order_type"] == "Delivery"
-            )
-            df.loc[app_delivery_mask, "sub_order_type"] = "Delivery"
-
-            # Map non-standard platforms to order_type
-            known_platforms = [
-                "Swiggy",
-                "Zomato",
-                "Delivery",
-                "App",
-                "Dine In",
-                "Takeaway",
-            ]
-            b2b_mask = ~df["sub_order_type"].isin(known_platforms)
-            df.loc[b2b_mask, "sub_order_type"] = df.loc[b2b_mask, "order_type"]
-
-        # --- 3. Data Pruning ---
-        print(
-            f"[{datetime.now().strftime('%H:%M:%S')}] Step 3: Pruning non-essential columns..."
-        )
-        cols_to_delete = [
-            "gst_no",
-            "payment_description",
-            "virtual_brand_name",
-            "assign_to",
-            "group_name",
-            "customer_phone",
-            "persons",
-            "order_cancel_reason",
+        # 4. Mandatory Numeric Conversion
+        financial_input_cols = [
+            "my_amount", "total_tax", "discount", "delivery_charge", 
+            "container_charge", "service_charge", "additional_charge", 
+            "waived_off", "round_off", "total"
         ]
-        df = df.drop(columns=[c for c in cols_to_delete if c in df.columns])
-
-        # --- 4. Final Output Requirements ---
-        # Ensure financial columns remain numeric
-        financial_cols = [
-            "my_amount",
-            "total_tax",
-            "discount",
-            "delivery_charge",
-            "container_charge",
-            "service_charge",
-            "additional_charge",
-            "waived_off",
-            "round_off",
-            "total",
-        ]
-        for col in financial_cols:
+        for col in financial_input_cols:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).round(2)
 
-        return df
+        # 5. Header Mapping (Raw -> DB)
+        header_map = {
+            'restaurant_name': 'Outlet_Name',
+            'invoice_no': 'Invoice_No',
+            'gst_no': 'GST_No',
+            'date': 'Date',
+            'kot_no': 'Kot_No',
+            'payment_type': 'Payment_Type',
+            'payment_description': 'Payment_Description',
+            'order_type': 'Order_Type',
+            'status': 'Status',
+            'sub_order_type': 'Platform',
+            'area': 'Area',
+            'virtual_brand_name': 'Virtual_Brand_Name',
+            'assign_to': 'Assign_To',
+            'group_name': 'Group_Name',
+            'customer_phone': 'Customer_Phone',
+            'customer_name': 'Customer_Name',
+            'customer_address': 'Customer_Address',
+            'customer_locality': 'Customer_Locality',
+            'persons': 'Persons',
+            'order_cancel_reason': 'Order_Cancel_Reason',
+            'my_amount': 'Base_Price',
+            'total_tax': 'Gst',
+            'discount': 'Discount',
+            'delivery_charge': 'Delivery_Charge',
+            'container_charge': 'Container_Charge',
+            'service_charge': 'Service_Charge',
+            'additional_charge': 'Additional_Charge',
+            'waived_off': 'Waived_Off',
+            'round_off': 'Round_Off',
+            'total': 'Customer_Paid'
+        }
+        df = df.rename(columns=header_map)
+
+        # 6. Type Normalization & Null placeholders
+        self.logger.info("Standardizing types and initializing blank metrics...")
+        
+        # Ensure Date is properly typed for the standard schema
+        if 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'])
+
+        # Business Logic requirement: All columns after Customer_Paid should be left blank (nil)
+        columns_after_paid = [
+            'Net Sales', 'Quantity', 'AOV', 'Zone', 'Sales Type', 'GMV',
+            'Total Sales', 'Sales Month', 'Discount %', 'Financial Year',
+            'Quarter', 'Sales Category'
+        ]
+        
+        for col in columns_after_paid:
+            df[col] = None
+        
+        self.logger.info("Extended columns (post-Customer_Paid) successfully nullified.")
+
+        # Final Cleanup: Remove columns not in the target DB schema if they exist
+        target_schema_cols = [
+            'Outlet_Name', 'Invoice_No', 'GST_No', 'Date', 'Kot_No', 'Payment_Type',
+            'Payment_Description', 'Order_Type', 'Status', 'Platform', 'Area',
+            'Virtual_Brand_Name', 'Assign_To', 'Group_Name', 'Customer_Phone',
+            'Customer_Name', 'Customer_Address', 'Customer_Locality', 'Persons',
+            'Order_Cancel_Reason', 'Base_Price', 'Gst', 'Discount', 'Delivery_Charge',
+            'Container_Charge', 'Service_Charge', 'Additional_Charge', 'Waived_Off',
+            'Round_Off', 'Customer_Paid', 'Net Sales', 'Quantity', 'AOV', 'Zone',
+            'Sales Type', 'GMV', 'Total Sales', 'Sales Month', 'Discount %',
+            'Financial Year', 'Quarter', 'Sales Category'
+        ]
+        
+        # Add missing columns with nulls to ensure insert doesn't fail on missing keys
+        for col in target_schema_cols:
+            if col not in df.columns:
+                df[col] = None
+
+        self.logger.info(f"Transformation complete. DataFrame shape: {df.shape}")
+        return df[target_schema_cols]
 
 
 def run_cleaner() -> None:

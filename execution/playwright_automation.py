@@ -6,7 +6,7 @@ pipeline fails (e.g., due to expired session cookies).
 
 Architecture:
     1. Launches a headless Firefox instance using Playwright.
-    2. Uses a persistent profile directory (`.tmp/playwright_profile`) to retain
+    2. Uses a persistent profile directory (`archive/.tmp/playwright_profile`) to retain
        session state across runs.
     3. Navigates to Petpooja. If not authenticated, performs a UI login sequence.
     4. Navigates to the report dashboard, selects the target date, and triggers
@@ -34,10 +34,11 @@ class PlaywrightAutomation:
     Playwright-based browser automation for Petpooja.
     """
 
-    def __init__(self, settings_path: str = "settings.json"):
+    def __init__(self, settings_path: str = "settings.json", headless: bool = True):
         self.logger_helper = LoggerHelper()
         self.logger = self.logger_helper.logger
 
+        self.headless = headless
         with open(settings_path, "r", encoding="utf-8") as f:
             self.settings = json.load(f)
 
@@ -74,8 +75,8 @@ class PlaywrightAutomation:
             try:
                 context = await p.firefox.launch_persistent_context(
                     user_data_dir=str(self.profile_dir),
-                    headless=True,
-                    args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+                    headless=self.headless,
+                    args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"] if self.headless else [],
                     viewport={"width": 1280, "height": 720},
                     accept_downloads=True
                 )
@@ -197,14 +198,15 @@ class PlaywrightAutomation:
         self.logger.info(f"[FALLBACK] Navigating to {report_url}")
         
         await page.goto(report_url, wait_until="domcontentloaded", timeout=60000)
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)  # Allow time for any redirects to resolve
 
-        # Check if we were redirected to login
-        if "login" not in page.url.lower():
+        # Detect redirected login screen by looking for specific inputs
+        login_input_exists = await page.locator("input#UserEmail, input[name='email']").count() > 0
+        if not login_input_exists and "login" not in page.url.lower():
             self.logger.info("[FALLBACK] Already authenticated via persistent profile.")
             return True
 
-        self.logger.info("[FALLBACK] Session expired in profile. Attempting UI login...")
+        self.logger.info("[FALLBACK] Redirected to login page. Attempting UI login...")
 
         if not self.username or not self.password:
             self.logger.error("[FALLBACK] Missing credentials in .env. Cannot auto-login.")
@@ -227,9 +229,14 @@ class PlaywrightAutomation:
             signin_btn = page.locator("button[type='submit'], button:has-text('Sign In')").first
             await signin_btn.click()
 
-            # Wait for dashboard
-            await page.wait_for_url("**/dashboard*", timeout=15000)
-            self.logger.info("[FALLBACK] Login successful.")
+            # Wait for dashboard: Increased timeout and added error capture
+            try:
+                await page.wait_for_url("**/dashboard*", timeout=30000)
+                self.logger.info("[FALLBACK] Login successful (Dashboard reached).")
+            except Exception as wait_err:
+                self.logger.error(f"[FALLBACK] Dashboard load timeout or error: {wait_err}")
+                await self._capture_error_state(page, datetime.date.today())
+                return False
 
             # Navigate to reports page if needed
             if report_url not in page.url:
@@ -239,7 +246,8 @@ class PlaywrightAutomation:
             return True
 
         except Exception as e:
-            self.logger.error(f"[FALLBACK] Automated UI login failed: {e}")
+            self.logger.error(f"[FALLBACK] Automated UI login failed during interaction: {e}")
+            await self._capture_error_state(page, datetime.date.today())
             return False
 
 
@@ -308,10 +316,11 @@ class PlaywrightAutomation:
                 self.logger.warning(f"[FALLBACK] Could not set dates via JS: {wait_err}")
 
             # 3. Click Export
-            export_btn = page.locator("#order_search, button:has-text('Export'), a:has-text('Export')").first
+            # Expanded fallback for common Petpooja button patterns
+            export_btn = page.locator("#order_search, button:has-text('Export'), a:has-text('Export'), input[value='Export'], button:has-text('Search')").first
             await export_btn.scroll_into_view_if_needed()
             await export_btn.click(force=True)
-            self.logger.info("[FALLBACK] Clicked Export button.")
+            self.logger.info("[FALLBACK] Clicked Export/Search button.")
 
             # 4. Wait for the response handler to catch the URL
             for _ in range(15):
